@@ -1,0 +1,66 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-editor-bg: #0f0f0f;
+  --color-editor-sidebar: #1a1a1a;
+  --color-editor-panel: #252525;
+  --color-editor-accent: #00a8e8;
+  --color-editor-border: #333333;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-editor-bg);
+    color: white;
+  }
+}
+
+@layer components {
+  .editor-panel {
+    background-color: var(--color-editor-panel);
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-editor-border);
+  }
+  
+  .btn-primary {
+    background-color: var(--color-editor-accent);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s;
+  }
+  .btn-primary:hover {
+    background-color: #0086b6;
+  }
+  
+  .btn-secondary {
+    background-color: var(--color-editor-panel);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-editor-border);
+    transition: background-color 0.2s;
+  }
+  .btn-secondary:hover {
+    background-color: #333333;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-editor-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
