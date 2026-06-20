@@ -70,7 +70,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       setCustomWidth(width);
       setCustomHeight(height);
       setFps(projFps);
-      
+
       // Select appropriate preset based on width
       if (width === 3840) setResolutionPreset('4K');
       else if (width === 2560) setResolutionPreset('2K');
@@ -567,10 +567,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                 <Sliders className="w-4 h-4 text-[#00a8e8]" />
                 Export Settings
               </h2>
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded text-[10px] text-purple-400 font-semibold uppercase tracking-wider">
-                <Sparkles className="w-3 h-3" />
-                CapCut style
-              </div>
             </div>
 
             {/* Config controls */}
@@ -585,22 +581,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                   <button
                     disabled={exportState !== 'idle'}
                     onClick={() => setFormat('mp4')}
-                    className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
-                      format === 'mp4'
+                    className={`py-2 rounded-lg text-xs font-semibold border transition-all ${format === 'mp4'
                         ? 'bg-[#00a8e8]/10 border-[#00a8e8] text-[#00a8e8]'
                         : 'border-[#2d2d2d] bg-[#1a1a1a] text-gray-400 hover:text-white hover:border-[#444]'
-                    } disabled:opacity-50`}
+                      } disabled:opacity-50`}
                   >
                     MP4 (H.264)
                   </button>
                   <button
                     disabled={exportState !== 'idle'}
                     onClick={() => setFormat('webm')}
-                    className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
-                      format === 'webm'
+                    className={`py-2 rounded-lg text-xs font-semibold border transition-all ${format === 'webm'
                         ? 'bg-[#00a8e8]/10 border-[#00a8e8] text-[#00a8e8]'
                         : 'border-[#2d2d2d] bg-[#1a1a1a] text-gray-400 hover:text-white hover:border-[#444]'
-                    } disabled:opacity-50`}
+                      } disabled:opacity-50`}
                   >
                     WebM (VP9)
                   </button>
