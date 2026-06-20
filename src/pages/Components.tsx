@@ -642,6 +642,7 @@ export const ComponentDetail: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
   const initializedForRef = useRef<string | null>(null);
 
   const fps = 30;
@@ -905,6 +906,28 @@ export const ComponentDetail: React.FC = () => {
             <ChevronRight className="w-4 h-4" />
             <span className="text-white">{isNew ? 'New' : 'Edit'}</span>
           </div>
+
+          <div className="w-px h-6 bg-[#333]" />
+
+          {isEditingName ? (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setIsEditingName(false)}
+              onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
+              autoFocus
+              className="px-2 py-1 bg-[#252525] border border-[#00a8e8] rounded text-sm text-white focus:outline-none"
+            />
+          ) : (
+            <button
+              onClick={() => setIsEditingName(true)}
+              className="text-white text-sm font-medium hover:text-[#00a8e8] transition-colors"
+              title="Click to rename component"
+            >
+              {name || 'Untitled Component'}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
