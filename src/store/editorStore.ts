@@ -23,7 +23,7 @@ interface EditorState {
   // UI State
   activeLeftPanel: 'media' | 'project';
   activeRightPanel: 'layers' | 'properties' | 'effects';
-  activeLeftTool: 'assets' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters';
+  activeLeftTool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters';
 
   // Actions
   createProject: (name: string, templateId: string) => Project;
@@ -79,7 +79,7 @@ interface EditorState {
   // UI
   setActiveLeftPanel: (panel: 'media' | 'project') => void;
   setActiveRightPanel: (panel: 'layers' | 'properties' | 'effects') => void;
-  setActiveLeftTool: (tool: 'assets' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters') => void;
+  setActiveLeftTool: (tool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters') => void;
 
   // Getters
   getSelectedLayer: () => Layer | null;
@@ -834,7 +834,7 @@ export const useEditorStore = create<EditorState>()(
 
       setActiveLeftPanel: (panel: 'media' | 'project') => set({ activeLeftPanel: panel }),
       setActiveRightPanel: (panel: 'layers' | 'properties' | 'effects') => set({ activeRightPanel: panel }),
-      setActiveLeftTool: (tool: 'assets' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters') => set({ activeLeftTool: tool }),
+      setActiveLeftTool: (tool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters') => set({ activeLeftTool: tool }),
 
       getSelectedLayer: () => {
         const { currentProject, selectedLayerId } = get();

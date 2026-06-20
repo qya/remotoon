@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { TemplateSelector } from '../components/editor';
 import { AppSidebar } from '../components/AppSidebar';
+import { MetaTags } from '../components/MetaTags';
 
 export const Projects: React.FC = () => {
   const navigate = useNavigate();
@@ -118,6 +119,11 @@ export const Projects: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#0f0f0f] overflow-hidden">
+      <MetaTags 
+        title="Projects" 
+        description="Manage and view your video projects in Remotoon." 
+        keywords="projects, videos, dashboard" 
+      />
       <AppSidebar />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

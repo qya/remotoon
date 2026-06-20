@@ -70,7 +70,7 @@ export const AssetsPanel: React.FC = () => {
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
- 
+
     if (!currentProject) return;
 
     const files = Array.from(e.dataTransfer.files).filter(
@@ -109,7 +109,7 @@ export const AssetsPanel: React.FC = () => {
   const hasMedia = currentProject && currentProject.media.length > 0;
 
   return (
-    <div 
+    <div
       className="h-full flex flex-col bg-[#1a1a1a] relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -138,28 +138,28 @@ export const AssetsPanel: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#333]">
         <div className="flex items-center gap-2">
-          <FolderOpen className="w-4 h-4 text-gray-400" />
+          <FolderOpen className="w-4 h-4 text-editor-accent" />
           <span className="text-sm font-medium text-gray-200">Assets</span>
         </div>
         <div className="flex items-center gap-1">
           <button
-            className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}
-            onClick={() => setViewMode('list')}
-            title="List View"
-          >
-            <List className="w-4 h-4" />
-          </button>
-          <button
-            className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`p-1 rounded transition-colors ${viewMode === 'grid' ? 'bg-[#333] text-white' : 'text-gray-500 hover:text-gray-300'}`}
             onClick={() => setViewMode('grid')}
             title="Grid View"
           >
-            <Grid3X3 className="w-4 h-4" />
+            <Grid3X3 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            className={`p-1 rounded transition-colors ${viewMode === 'list' ? 'bg-[#333] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+            onClick={() => setViewMode('list')}
+            title="List View"
+          >
+            <List className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={handleImportClick}
             disabled={!currentProject || isImporting}
-            className="ml-2 flex items-center gap-1 px-3 py-1.5 bg-transparent hover:bg-[#333] border border-[#444] rounded text-xs text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 px-2 py-1 hover:bg-[#333] border border-[#444] rounded text-[10px] text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Upload className="w-3 h-3" />
             Import

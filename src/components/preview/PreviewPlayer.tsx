@@ -217,7 +217,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       {/* Player Container */}
       <div
         ref={containerRef}
-        className="flex-1 flex items-center justify-center bg-black p-4 overflow-hidden relative"
+        className="flex-1 flex items-center justify-center bg-[#1a1a1a] p-4 overflow-hidden relative"
       >
         <div
           style={{

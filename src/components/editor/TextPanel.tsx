@@ -1,5 +1,4 @@
-import React from 'react';
-import { Type, Sparkles, Heading1, Heading2, CaseSensitive } from 'lucide-react';
+import { Type, Heading1, Heading2, CaseSensitive } from 'lucide-react';
 
 export const TextPanel: React.FC = () => {
   return (

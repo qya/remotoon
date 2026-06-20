@@ -8,6 +8,7 @@ import { Landing } from './pages/Landing';
 import { ComponentsList, ComponentDetail } from './pages/Components';
 import { RemotionRoot } from './RemotionRoot';
 import { ResizeHandle } from './components/ui/ResizeHandle';
+import { MetaTags } from './components/MetaTags';
 import {
   FolderOpen,
   Headphones,
@@ -87,6 +88,10 @@ function Editor() {
 
   return (
     <div className="h-screen flex flex-col bg-[#0f0f0f]">
+      <MetaTags 
+        title={currentProject?.name ? `Editor - ${currentProject.name}` : 'Editor'} 
+        description="Create and edit your video timeline in Remotoon." 
+      />
       {/* Top Bar */}
       <header className="h-12 bg-[#1a1a1a] border-b border-[#333] flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -153,11 +158,7 @@ function Editor() {
               <button
                 key={tool.id}
                 onClick={() => {
-                  if (tool.id === 'components') {
-                    setShowComponentLibrary(true);
-                  } else {
-                    setActiveLeftTool(tool.id as any);
-                  }
+                  setActiveLeftTool(tool.id as any);
                 }}
                 className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors ${isActive
                   ? 'bg-[#252525] text-white'

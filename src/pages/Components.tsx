@@ -35,6 +35,7 @@ import {
   Film,
 } from 'lucide-react';
 import { AppSidebar } from '../components/AppSidebar';
+import { MetaTags } from '../components/MetaTags';
 
 type Category = 'all' | 'animation' | 'effect' | 'overlay' | 'text' | 'shape';
 type ViewMode = 'grid' | 'list';
@@ -248,6 +249,11 @@ export const ComponentsList: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#0f0f0f] overflow-hidden">
+      <MetaTags 
+        title="Components" 
+        description="Manage and customize your reusable Remotion components." 
+        keywords="components, library, remotion components" 
+      />
       <AppSidebar />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -883,6 +889,10 @@ export const ComponentDetail: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-[#0f0f0f]">
+      <MetaTags 
+        title={isNew ? 'New Component' : (name ? `Edit ${name}` : 'Edit Component')} 
+        description={isNew ? 'Create a new custom animation component.' : `Customize the code and properties for the component: ${name || ''}.`}
+      />
       {/* Header */}
       <header className="h-14 bg-[#1a1a1a] border-b border-[#333] flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-3">

@@ -1,5 +1,4 @@
-import React from 'react';
-import { Headphones, Music, Mic, Volume2, Sparkles } from 'lucide-react';
+import { Headphones, Music, Mic, Volume2 } from 'lucide-react';
 
 export const AudioPanel: React.FC = () => {
   return (

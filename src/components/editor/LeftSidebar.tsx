@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { AssetsPanel } from './AssetsPanel';
+import { ComponentsPanel } from './ComponentsPanel';
 import { AudioPanel } from './AudioPanel';
 import { TextPanel } from './TextPanel';
 import { StickersPanel } from './StickersPanel';
@@ -14,6 +15,8 @@ export const LeftSidebar: React.FC = () => {
   switch (activeLeftTool) {
     case 'assets':
       return <AssetsPanel />;
+    case 'components':
+      return <ComponentsPanel />;
     case 'audio':
       return <AudioPanel />;
     case 'text':

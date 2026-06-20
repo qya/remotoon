@@ -13,12 +13,18 @@ import {
   Palette,
   Wand2
 } from 'lucide-react';
+import { MetaTags } from '../components/MetaTags';
 
 export const Landing: React.FC = () => {
   const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-[#0f0f0f]">
+      <MetaTags 
+        title="Home" 
+        description="Remotoon is a powerful yet intuitive video editor. Create professional content with layers, effects, and animations — all in your browser."
+        keywords="video editor, remotion, react, jit animation, video template"
+      />
       {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0f0f0f]/80 backdrop-blur-md border-b border-[#333]/50">
         <div className="max-w-7xl mx-auto px-6 py-4">
