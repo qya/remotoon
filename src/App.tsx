@@ -15,7 +15,6 @@ import {
   Wand2,
   Clapperboard,
   Sparkles,
-  Settings,
   Video,
   Image as ImageIcon,
   Box,

@@ -5,6 +5,7 @@ import { Player } from '@remotion/player';
 import { jitCompiler } from '../lib/jitCompiler';
 import { nanoid } from 'nanoid';
 import type { ComponentPart } from '../types';
+import Editor from '@monaco-editor/react';
 import {
   Box,
   Sparkles,
@@ -18,13 +19,17 @@ import {
   ArrowLeft,
   Trash2,
   Save,
-  Code,
   Check,
   AlertCircle,
   Play,
   Copy,
   Pause,
   Tag,
+  Settings,
+  MessageSquare,
+  Send,
+  PanelLeftClose,
+  PanelLeftOpen,
   MoreVertical,
   ChevronRight,
   Film,
@@ -134,6 +139,72 @@ const PreviewPlaceholder: React.FC<{ error?: boolean }> = ({ error }) => (
     )}
   </div>
 );
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+const buildCodeFromPrompt = (prompt: string) => {
+  const safePrompt = prompt.trim().replace(/\s+/g, ' ');
+  const title = safePrompt.slice(0, 42) || 'AI Generated';
+  const subtitle = safePrompt.slice(0, 90) || 'Describe the animation you want';
+
+  return `const { useCurrentFrame, interpolate, AbsoluteFill, Easing } = React;
+
+function Component() {
+  const frame = useCurrentFrame();
+
+  const opacity = interpolate(frame, [0, 25], [0, 1], {
+    extrapolateRight: 'clamp',
+    easing: Easing.out(Easing.ease),
+  });
+
+  const moveY = interpolate(frame, [0, 45], [60, 0], {
+    extrapolateRight: 'clamp',
+    easing: Easing.out(Easing.cubic),
+  });
+
+  const pulse = interpolate(frame % 60, [0, 30, 60], [1, 1.03, 1], {
+    extrapolateRight: 'clamp',
+  });
+
+  return (
+    <AbsoluteFill style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      fontFamily: 'Inter, system-ui, sans-serif',
+    }}>
+      <div style={{
+        textAlign: 'center',
+        opacity,
+        transform: \`translateY(\${moveY}px) scale(\${pulse})\`,
+        padding: '0 80px',
+      }}>
+        <h1 style={{
+          margin: 0,
+          color: '#f8fafc',
+          fontSize: 82,
+          lineHeight: 1.1,
+          letterSpacing: '-0.03em',
+        }}>
+          ${title.replace(/`/g, '')}
+        </h1>
+        <p style={{
+          marginTop: 20,
+          color: '#94a3b8',
+          fontSize: 28,
+        }}>
+          ${subtitle.replace(/`/g, '')}
+        </p>
+      </div>
+    </AbsoluteFill>
+  );
+}`;
+};
 
 // Components List Page
 export const ComponentsList: React.FC = () => {
@@ -560,6 +631,11 @@ export const ComponentDetail: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const [previewComponent, setPreviewComponent] = useState<React.ComponentType<any> | null>(null);
+  const [activeTab, setActiveTab] = useState<'preview' | 'split' | 'code'>('split');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const initializedForRef = useRef<string | null>(null);
 
   const fps = 30;
@@ -607,12 +683,114 @@ export const ComponentDetail: React.FC = () => {
     }
 
     setCompileSuccess(false);
-    setIsPlaying(false);
+    setIsPlaying(true);
+    setActiveTab('split');
+    setAiPrompt('');
+    setChatMessages([
+      {
+        id: nanoid(),
+        role: 'assistant',
+        content: isNew
+          ? 'Tell me what to create and I will draft starter code for your new component.'
+          : 'Describe edits for this component and I will generate an updated draft.',
+      },
+    ]);
     setPreviewKey(prev => prev + 1);
     initializedForRef.current = targetKey;
   }, [isNew, existingComponent]);
 
-  // Handle test compile
+  const handleNewChat = useCallback(() => {
+    setAiPrompt('');
+    setChatMessages([
+      {
+        id: nanoid(),
+        role: 'assistant',
+        content: isNew
+          ? 'New chat started. Describe the component you want to create.'
+          : 'New chat started. Describe how you want to edit this component.',
+      },
+    ]);
+  }, [isNew]);
+
+  const handleGenerateFromPrompt = useCallback(() => {
+    const promptText = aiPrompt.trim();
+    if (!promptText) return;
+
+    setChatMessages((prev) => [
+      ...prev,
+      { id: nanoid(), role: 'user', content: promptText },
+    ]);
+    setAiPrompt('');
+
+    const generatedCode = buildCodeFromPrompt(promptText);
+    setCode(generatedCode);
+    setCompileError(null);
+    setCompileSuccess(false);
+
+    try {
+      const result = jitCompiler.compile(generatedCode);
+      if (result.success && result.component) {
+        setPreviewComponent(() => result.component ?? null);
+        setCompileError(null);
+        setIsPlaying(true);
+        setPreviewKey((prev) => prev + 1);
+        setActiveTab('preview');
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: nanoid(),
+            role: 'assistant',
+            content: 'Generated a draft based on your prompt. Review it in Preview or refine it in Code.',
+          },
+        ]);
+      } else {
+        setPreviewComponent(null);
+        setCompileError(result.error || 'Compilation failed');
+        setActiveTab('code');
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: nanoid(),
+            role: 'assistant',
+            content: 'Draft generated, but it has a compile error. Please review and run Test.',
+          },
+        ]);
+      }
+    } catch (error) {
+      setPreviewComponent(null);
+      setCompileError(String(error));
+      setActiveTab('code');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: nanoid(),
+          role: 'assistant',
+          content: 'Could not compile this draft. Try a simpler prompt or edit the code manually.',
+        },
+      ]);
+    }
+  }, [aiPrompt]);
+
+  // Real-time preview update with debounce
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      try {
+        const result = jitCompiler.compile(code);
+        if (result.success && result.component) {
+          setPreviewComponent(() => result.component ?? null);
+          setCompileError(null);
+        } else {
+          setCompileError(result.error || 'Compilation failed');
+        }
+      } catch (e) {
+        setCompileError(String(e));
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeout);
+  }, [code]);
+
+  // Handle test compile (manual trigger)
   const handleTestCompile = useCallback(() => {
     setCompileError(null);
     setCompileSuccess(false);
@@ -749,138 +927,454 @@ export const ComponentDetail: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Preview */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 bg-black flex items-center justify-center p-8">
-            <div className="w-full max-w-4xl aspect-video bg-[#0f0f0f] rounded-xl overflow-hidden shadow-2xl border border-[#333]">
-              {previewComponent ? (
-                <Player
-                  key={previewKey}
-                  component={previewComponent}
-                  durationInFrames={durationInFrames}
-                  fps={fps}
-                  compositionWidth={1920}
-                  compositionHeight={1080}
-                  style={{ width: '100%', height: '100%' }}
-                  autoPlay={isPlaying}
-                  loop
-                  controls={false}
-                  clickToPlay={false}
-                  acknowledgeRemotionLicense
+        {/* Left AI Chat Sidebar */}
+        <aside className={`border-r border-[#333] bg-[#151515] transition-all ${isChatCollapsed ? 'w-14' : 'w-[340px]'}`}>
+          {isChatCollapsed ? (
+            <div className="h-full flex flex-col items-center py-3 gap-3">
+              <button
+                onClick={() => setIsChatCollapsed(false)}
+                className="p-2 text-gray-400 hover:text-white hover:bg-[#252525] rounded-lg transition-colors"
+                title="Open chat"
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+              </button>
+              <MessageSquare className="w-4 h-4 text-gray-600" />
+            </div>
+          ) : (
+            <div className="h-full flex flex-col">
+              <div className="flex items-center justify-between p-3 border-b border-[#333]">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-[#00a8e8]" />
+                  <span className="text-sm font-medium text-gray-200">AI Chat</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleNewChat}
+                    className="px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#252525] rounded transition-colors"
+                  >
+                    New
+                  </button>
+                  <button
+                    onClick={() => setIsChatCollapsed(true)}
+                    className="p-1.5 text-gray-400 hover:text-white hover:bg-[#252525] rounded transition-colors"
+                    title="Collapse chat"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {chatMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`rounded-lg p-3 text-sm ${msg.role === 'user'
+                      ? 'bg-[#00a8e8]/15 text-blue-100 border border-[#00a8e8]/30'
+                      : 'bg-[#202020] text-gray-300 border border-[#333]'
+                      }`}
+                  >
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3 border-t border-[#333] space-y-2">
+                <textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder={isNew ? 'Describe the component you want...' : 'Describe what to edit...'}
+                  className="w-full h-24 px-3 py-2 bg-[#202020] border border-[#333] rounded-lg text-sm text-gray-200 resize-none focus:border-[#00a8e8] focus:outline-none"
                 />
-              ) : (
-                <PreviewPlaceholder error={!!compileError} />
-              )}
+                <button
+                  onClick={handleGenerateFromPrompt}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#00a8e8] hover:bg-[#0086b6] rounded-lg text-white text-sm font-medium transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                  Generate Draft
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+        </aside>
 
-          {/* Preview Controls */}
-          <div className="h-14 bg-[#1a1a1a] border-t border-[#333] flex items-center justify-between px-4">
+        {/* Center Content (Preview | Split | Code) */}
+        <div className="flex-1 min-w-0 flex flex-col bg-black relative">
+          <div className="h-14 border-b border-[#333] bg-[#1a1a1a] px-4 flex items-center justify-between">
+            <div className="inline-flex rounded-lg border border-[#333] overflow-hidden">
+              <button
+                onClick={() => setActiveTab('preview')}
+                className={`px-4 py-2 text-sm transition-colors ${activeTab === 'preview' ? 'bg-[#252525] text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-[#202020]'
+                  }`}
+              >
+                Preview
+              </button>
+              <button
+                onClick={() => setActiveTab('split')}
+                className={`px-4 py-2 text-sm border-l border-[#333] transition-colors ${activeTab === 'split' ? 'bg-[#252525] text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-[#202020]'
+                  }`}
+              >
+                Split
+              </button>
+              <button
+                onClick={() => setActiveTab('code')}
+                className={`px-4 py-2 text-sm border-l border-[#333] transition-colors ${activeTab === 'code' ? 'bg-[#252525] text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-[#202020]'
+                  }`}
+              >
+                Code
+              </button>
+            </div>
+
+            {/* Settings button - inline for Preview/Code modes */}
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              disabled={!previewComponent}
-              className="flex items-center gap-2 px-4 py-2 bg-[#252525] hover:bg-[#333] disabled:opacity-30 rounded-lg text-white text-sm transition-colors"
+              onClick={() => setIsSettingsOpen((prev) => !prev)}
+              className={`flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-colors text-gray-300 bg-[#252525] hover:bg-[#333] ${activeTab === 'split' ? 'hidden' : ''
+                }`}
             >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              {isPlaying ? 'Pause' : 'Play'}
+              <Settings className="w-4 h-4" />
+              {isSettingsOpen ? 'Hide Settings' : 'Show Settings'}
             </button>
-
-            <div className="text-xs text-gray-500">
-              1920×1080 • {fps} FPS • {Math.round(durationInFrames / fps)}s
-            </div>
-          </div>
-        </div>
-
-        {/* Editor Sidebar */}
-        <div className="w-96 bg-[#1a1a1a] border-l border-[#333] flex flex-col overflow-y-auto">
-          {/* Name */}
-          <div className="p-4 border-b border-[#333]">
-            <label className="text-xs text-gray-500 block mb-2">Component Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm text-white focus:border-[#00a8e8] focus:outline-none"
-              placeholder="My Component"
-            />
           </div>
 
-          {/* Category */}
-          <div className="p-4 border-b border-[#333]">
-            <label className="text-xs text-gray-500 block mb-2">Category</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm text-white focus:border-[#00a8e8] focus:outline-none"
+          {/* Floating Settings button for Split mode */}
+          {activeTab === 'split' && (
+            <button
+              onClick={() => setIsSettingsOpen((prev) => !prev)}
+              className="absolute top-20 right-4 z-50 flex items-center gap-2 px-3 py-2 text-xs rounded-lg shadow-lg transition-colors text-gray-300 bg-[#252525] hover:bg-[#333] border border-[#444]"
+              title="Toggle Settings"
             >
-              <option value="animation">Animation</option>
-              <option value="effect">Effect</option>
-              <option value="overlay">Overlay</option>
-              <option value="text">Text</option>
-              <option value="shape">Shape</option>
-            </select>
-          </div>
+              <Settings className="w-4 h-4" />
+              {isSettingsOpen ? 'Hide' : 'Settings'}
+            </button>
+          )}
 
-          {/* Tags */}
-          <div className="p-4 border-b border-[#333]">
-            <label className="text-xs text-gray-500 block mb-2 flex items-center gap-1">
-              <Tag className="w-3 h-3" />
-              Tags (comma separated)
-            </label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="intro, title, animation..."
-              className="w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm text-white focus:border-[#00a8e8] focus:outline-none"
-            />
-          </div>
+          {activeTab === 'preview' ? (
+            <>
+              <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
+                <div className="w-full max-w-4xl aspect-video bg-[#0f0f0f] rounded-xl overflow-hidden shadow-2xl border border-[#333]">
+                  {previewComponent ? (
+                    <Player
+                      key={previewKey}
+                      component={previewComponent}
+                      durationInFrames={durationInFrames}
+                      fps={fps}
+                      compositionWidth={1920}
+                      compositionHeight={1080}
+                      style={{ width: '100%', height: '100%' }}
+                      autoPlay={isPlaying}
+                      loop
+                      controls={false}
+                      clickToPlay={false}
+                      acknowledgeRemotionLicense
+                    />
+                  ) : (
+                    <PreviewPlaceholder error={!!compileError} />
+                  )}
+                </div>
+              </div>
+              <div className="h-14 bg-[#1a1a1a] border-t border-[#333] flex items-center justify-between px-4">
+                <button
+                  onClick={() => setIsPlaying(!isPlaying)}
+                  disabled={!previewComponent}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#252525] hover:bg-[#333] disabled:opacity-30 rounded-lg text-white text-sm transition-colors"
+                >
+                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  {isPlaying ? 'Pause' : 'Play'}
+                </button>
 
-          {/* Code Editor */}
-          <div className="flex-1 flex flex-col p-4 min-h-[300px]">
-            <label className="text-xs text-gray-500 block mb-2 flex items-center gap-1">
-              <Code className="w-3 h-3" />
-              Component Code
-            </label>
-            <textarea
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="flex-1 w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm font-mono text-gray-300 resize-none focus:border-[#00a8e8] focus:outline-none"
-              spellCheck={false}
-            />
-          </div>
+                <div className="text-xs text-gray-500">
+                  1920×1080 • {fps} FPS • {Math.round(durationInFrames / fps)}s
+                </div>
+              </div>
+            </>
+          ) : activeTab === 'split' ? (
+            <div className="flex-1 flex">
+              {/* Code Side - Left */}
+              <div className="flex-1 flex flex-col min-h-0 border-r border-[#333]">
+                <Editor
+                  height="100%"
+                  defaultLanguage="typescript"
+                  language="typescript"
+                  value={code}
+                  onChange={(value) => setCode(value || '')}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    roundedSelection: false,
+                    scrollBeyondLastLine: false,
+                    readOnly: false,
+                    automaticLayout: true,
+                    tabSize: 2,
+                    insertSpaces: true,
+                    formatOnPaste: true,
+                    formatOnType: true,
+                    wordWrap: 'on',
+                    folding: true,
+                    foldingHighlight: true,
+                    foldingStrategy: 'auto',
+                    showFoldingControls: 'always',
+                    matchBrackets: 'always',
+                    renderLineHighlight: 'all',
+                    theme: 'vs-dark',
+                  }}
+                  beforeMount={(monaco: any) => {
+                    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+                      jsx: monaco.languages.typescript.JsxEmit.React,
+                      jsxFactory: 'React.createElement',
+                      reactNamespace: 'React',
+                      allowNonTsExtensions: true,
+                      allowJs: true,
+                      target: monaco.languages.typescript.ScriptTarget.Latest,
+                      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+                      module: monaco.languages.typescript.ModuleKind.CommonJS,
+                      noEmit: true,
+                      esModuleInterop: true,
+                      skipLibCheck: true,
+                    });
 
-          {/* Status Messages */}
-          <div className="p-4 space-y-2">
-            {compileError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-red-400 font-medium">Compilation Error</p>
-                    <p className="text-xs text-red-300/80 font-mono mt-1 break-words">{compileError}</p>
+                    monaco.languages.typescript.typescriptDefaults.addExtraLib(
+                      `
+                      declare module 'remotion' {
+                        export function useCurrentFrame(): number;
+                        export function useVideoConfig(): { fps: number; durationInFrames: number; width: number; height: number };
+                        export function interpolate(input: number, inputRange: number[], outputRange: number[], options?: any): number;
+                        export function spring(options: any): number;
+                        export const AbsoluteFill: React.FC<any>;
+                        export const Sequence: React.FC<any>;
+                        export const Video: React.FC<any>;
+                        export const Img: React.FC<any>;
+                        export const Audio: React.FC<any>;
+                        export const Easing: {
+                          linear: (t: number) => number;
+                          in: (easing: (t: number) => number) => (t: number) => number;
+                          out: (easing: (t: number) => number) => (t: number) => number;
+                          inOut: (easing: (t: number) => number) => (t: number) => number;
+                          ease: (t: number) => number;
+                          back: (overshoot?: number) => (t: number) => number;
+                          bounce: (t: number) => number;
+                          elastic: (amplitude?: number, period?: number) => (t: number) => number;
+                        };
+                      }
+                      
+                      declare const $PROPS: Record<string, any>;
+                      declare const React: typeof import('react');
+                      `,
+                      'remotion.d.ts'
+                    );
+                  }}
+                  theme="vs-dark"
+                  loading={
+                    <div className="h-full flex items-center justify-center text-gray-500">
+                      <div className="animate-pulse">Loading editor...</div>
+                    </div>
+                  }
+                />
+              </div>
+              {/* Preview Side - Right */}
+              <div className="flex-1 flex flex-col">
+                <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
+                  <div className="w-full max-w-3xl aspect-video bg-[#0f0f0f] rounded-xl overflow-hidden shadow-2xl border border-[#333]">
+                    {previewComponent ? (
+                      <Player
+                        key={previewKey}
+                        component={previewComponent}
+                        durationInFrames={durationInFrames}
+                        fps={fps}
+                        compositionWidth={1920}
+                        compositionHeight={1080}
+                        style={{ width: '100%', height: '100%' }}
+                        autoPlay={isPlaying}
+                        loop
+                        controls={false}
+                        clickToPlay={false}
+                        acknowledgeRemotionLicense
+                      />
+                    ) : (
+                      <PreviewPlaceholder error={!!compileError} />
+                    )}
+                  </div>
+                </div>
+                <div className="h-12 bg-[#1a1a1a] border-t border-[#333] flex items-center justify-between px-4">
+                  <button
+                    onClick={() => setIsPlaying(!isPlaying)}
+                    disabled={!previewComponent}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-[#252525] hover:bg-[#333] disabled:opacity-30 rounded-lg text-white text-sm transition-colors"
+                  >
+                    {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                    {isPlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <div className="text-xs text-gray-500">
+                    1920×1080 • {fps} FPS
                   </div>
                 </div>
               </div>
-            )}
-
-            {compileSuccess && (
-              <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-green-400" />
-                  <span className="text-sm text-green-400">Compilation successful!</span>
-                </div>
-              </div>
-            )}
-
-            <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
-              <p className="text-xs text-blue-400">
-                <strong>Tip:</strong> Define a function named <code>Component</code>.
-                Use React and Remotion hooks for animations.
-              </p>
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 p-4 min-h-0">
+              <Editor
+                height="100%"
+                defaultLanguage="typescript"
+                language="typescript"
+                value={code}
+                onChange={(value) => setCode(value || '')}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  lineNumbers: 'on',
+                  roundedSelection: false,
+                  scrollBeyondLastLine: false,
+                  readOnly: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                  insertSpaces: true,
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  wordWrap: 'on',
+                  folding: true,
+                  foldingHighlight: true,
+                  foldingStrategy: 'auto',
+                  showFoldingControls: 'always',
+                  matchBrackets: 'always',
+                  renderLineHighlight: 'all',
+                  theme: 'vs-dark',
+                }}
+                beforeMount={(monaco: any) => {
+                  monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+                    jsx: monaco.languages.typescript.JsxEmit.React,
+                    jsxFactory: 'React.createElement',
+                    reactNamespace: 'React',
+                    allowNonTsExtensions: true,
+                    allowJs: true,
+                    target: monaco.languages.typescript.ScriptTarget.Latest,
+                    moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+                    module: monaco.languages.typescript.ModuleKind.CommonJS,
+                    noEmit: true,
+                    esModuleInterop: true,
+                    skipLibCheck: true,
+                  });
+
+                  monaco.languages.typescript.typescriptDefaults.addExtraLib(
+                    `
+                    declare module 'remotion' {
+                      export function useCurrentFrame(): number;
+                      export function useVideoConfig(): { fps: number; durationInFrames: number; width: number; height: number };
+                      export function interpolate(input: number, inputRange: number[], outputRange: number[], options?: any): number;
+                      export function spring(options: any): number;
+                      export const AbsoluteFill: React.FC<any>;
+                      export const Sequence: React.FC<any>;
+                      export const Video: React.FC<any>;
+                      export const Img: React.FC<any>;
+                      export const Audio: React.FC<any>;
+                      export const Easing: {
+                        linear: (t: number) => number;
+                        in: (easing: (t: number) => number) => (t: number) => number;
+                        out: (easing: (t: number) => number) => (t: number) => number;
+                        inOut: (easing: (t: number) => number) => (t: number) => number;
+                        ease: (t: number) => number;
+                        back: (overshoot?: number) => (t: number) => number;
+                        bounce: (t: number) => number;
+                        elastic: (amplitude?: number, period?: number) => (t: number) => number;
+                      };
+                    }
+                    
+                    declare const $PROPS: Record<string, any>;
+                    declare const React: typeof import('react');
+                    `,
+                    'remotion.d.ts'
+                  );
+                }}
+                theme="vs-dark"
+                loading={
+                  <div className="h-full flex items-center justify-center text-gray-500">
+                    <div className="animate-pulse">Loading editor...</div>
+                  </div>
+                }
+              />
+            </div>
+          )}
         </div>
+
+        {/* Right Sidebar (Cog Settings) */}
+        {isSettingsOpen && (
+          <aside className="w-96 bg-[#1a1a1a] border-l border-[#333] flex flex-col overflow-y-auto">
+            <div className="p-4 border-b border-[#333]">
+              <h3 className="text-sm font-medium text-gray-200 flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                Component Settings
+              </h3>
+            </div>
+
+            <div className="p-4 border-b border-[#333]">
+              <label className="text-xs text-gray-500 block mb-2">Component Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm text-white focus:border-[#00a8e8] focus:outline-none"
+                placeholder="My Component"
+              />
+            </div>
+
+            <div className="p-4 border-b border-[#333]">
+              <label className="text-xs text-gray-500 block mb-2">Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm text-white focus:border-[#00a8e8] focus:outline-none"
+              >
+                <option value="animation">Animation</option>
+                <option value="effect">Effect</option>
+                <option value="overlay">Overlay</option>
+                <option value="text">Text</option>
+                <option value="shape">Shape</option>
+              </select>
+            </div>
+
+            <div className="p-4 border-b border-[#333]">
+              <label className="text-xs text-gray-500 block mb-2 flex items-center gap-1">
+                <Tag className="w-3 h-3" />
+                Tags (comma separated)
+              </label>
+              <input
+                type="text"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                placeholder="intro, title, animation..."
+                className="w-full px-3 py-2 bg-[#252525] border border-[#333] rounded-lg text-sm text-white focus:border-[#00a8e8] focus:outline-none"
+              />
+            </div>
+
+            <div className="p-4 space-y-2">
+              {compileError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-red-400 font-medium">Compilation Error</p>
+                      <p className="text-xs text-red-300/80 font-mono mt-1 break-words">{compileError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {compileSuccess && (
+                <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-green-400" />
+                    <span className="text-sm text-green-400">Compilation successful!</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                <p className="text-xs text-blue-400">
+                  <strong>Tip:</strong> Define a function named <code>Component</code>.
+                  Use React and Remotion hooks for animations.
+                </p>
+              </div>
+            </div>
+          </aside>
+        )}
       </div>
     </div>
   );

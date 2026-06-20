@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { RotateCcw, Save, AlertCircle, CheckCircle, Code } from 'lucide-react';
 import { jitCompiler } from '../../lib/jitCompiler';
+import Editor from '@monaco-editor/react';
 
 export const CodeEditor: React.FC = () => {
   const currentProject = useEditorStore((state) => state.currentProject);
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
   const updateLayer = useEditorStore((state) => state.updateLayer);
   
-  // Use useMemo to avoid infinite loop
   const selectedLayer = useMemo(() => {
     if (!currentProject || !selectedLayerId) return null;
     return currentProject.layers.find((l) => l.id === selectedLayerId) || null;
@@ -19,28 +19,41 @@ export const CodeEditor: React.FC = () => {
   const [isValid, setIsValid] = useState(true);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  // Update code when selected layer changes
+  // Update code when selected layer changes and compile on first load
   useEffect(() => {
     if (selectedLayer?.type === 'component' && selectedLayer.componentCode) {
       setCode(selectedLayer.componentCode);
       setError(null);
       setIsValid(true);
+      
+      // Compile on first load if not already compiled
+      if (!selectedLayer.compiledComponent) {
+        const result = jitCompiler.compile(selectedLayer.componentCode);
+        if (result.success) {
+          updateLayer(selectedLayer.id, {
+            compiledComponent: result.component,
+          });
+        }
+      }
     } else {
       setCode('');
       setError(null);
     }
-  }, [selectedLayer?.id]);
+  }, [selectedLayer?.id, selectedLayer?.compiledComponent]);
 
-  // Auto-compile on change (debounced)
+  // Auto-compile on change (debounced) - updates preview in real-time
   useEffect(() => {
     if (!selectedLayer || selectedLayer.type !== 'component') return;
-    if (code === selectedLayer.componentCode) return;
 
     const timeout = setTimeout(() => {
       const result = jitCompiler.compile(code);
       if (result.success) {
         setError(null);
         setIsValid(true);
+        // Update the preview in real-time
+        updateLayer(selectedLayer.id, {
+          compiledComponent: result.component,
+        });
       } else {
         setError(result.error || 'Compilation error');
         setIsValid(false);
@@ -48,7 +61,7 @@ export const CodeEditor: React.FC = () => {
     }, 500);
 
     return () => clearTimeout(timeout);
-  }, [code, selectedLayer]);
+  }, [code, selectedLayer, updateLayer]);
 
   const handleSave = useCallback(() => {
     if (selectedLayer && selectedLayer.type === 'component') {
@@ -81,6 +94,78 @@ export const CodeEditor: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleSave]);
+
+  // Monaco editor options
+  const editorOptions = useMemo(() => ({
+    minimap: { enabled: false },
+    fontSize: 14,
+    lineNumbers: 'on' as const,
+    roundedSelection: false,
+    scrollBeyondLastLine: false,
+    readOnly: false,
+    automaticLayout: true,
+    tabSize: 2,
+    insertSpaces: true,
+    formatOnPaste: true,
+    formatOnType: true,
+    wordWrap: 'on' as const,
+    folding: true,
+    foldingHighlight: true,
+    foldingStrategy: 'auto' as const,
+    showFoldingControls: 'always' as const,
+    matchBrackets: 'always' as const,
+    renderLineHighlight: 'all' as const,
+    theme: 'vs-dark',
+  }), []);
+
+  // Monaco editor before mount - configure TypeScript
+  const handleBeforeMount = (monaco: any) => {
+    // Configure TypeScript for JSX
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+      jsx: monaco.languages.typescript.JsxEmit.React,
+      jsxFactory: 'React.createElement',
+      reactNamespace: 'React',
+      allowNonTsExtensions: true,
+      allowJs: true,
+      target: monaco.languages.typescript.ScriptTarget.Latest,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      module: monaco.languages.typescript.ModuleKind.CommonJS,
+      noEmit: true,
+      esModuleInterop: true,
+      skipLibCheck: true,
+    });
+
+    // Add type definitions for Remotion
+    monaco.languages.typescript.typescriptDefaults.addExtraLib(
+      `
+      declare module 'remotion' {
+        export function useCurrentFrame(): number;
+        export function useVideoConfig(): { fps: number; durationInFrames: number; width: number; height: number };
+        export function interpolate(input: number, inputRange: number[], outputRange: number[], options?: any): number;
+        export function spring(options: any): number;
+        export const AbsoluteFill: React.FC<any>;
+        export const Sequence: React.FC<any>;
+        export const Video: React.FC<any>;
+        export const Img: React.FC<any>;
+        export const Audio: React.FC<any>;
+        export const Easing: {
+          linear: (t: number) => number;
+          in: (easing: (t: number) => number) => (t: number) => number;
+          out: (easing: (t: number) => number) => (t: number) => number;
+          inOut: (easing: (t: number) => number) => (t: number) => number;
+          ease: (t: number) => number;
+          back: (overshoot?: number) => (t: number) => number;
+          bounce: (t: number) => number;
+          elastic: (amplitude?: number, period?: number) => (t: number) => number;
+        };
+      }
+      
+      declare const $PROPS: Record<string, any>;
+      declare const React: typeof import('react');
+      `,
+      'remotion.d.ts'
+    );
+  };
 
   if (!selectedLayer || selectedLayer.type !== 'component' || !currentProject) {
     return (
@@ -155,16 +240,22 @@ export const CodeEditor: React.FC = () => {
         </div>
       )}
 
-      {/* Editor */}
-      <div className="flex-1 relative">
-        <textarea
+      {/* Monaco Editor */}
+      <div className="flex-1 min-h-0">
+        <Editor
+          height="100%"
+          defaultLanguage="typescript"
+          language="typescript"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
-          className="w-full h-full p-4 bg-editor-bg font-mono text-sm text-gray-300 resize-none focus:outline-none leading-relaxed"
-          spellCheck={false}
-          style={{
-            tabSize: 2,
-          }}
+          onChange={(value) => setCode(value || '')}
+          options={editorOptions}
+          beforeMount={handleBeforeMount}
+          theme="vs-dark"
+          loading={
+            <div className="h-full flex items-center justify-center text-gray-500">
+              <div className="animate-pulse">Loading editor...</div>
+            </div>
+          }
         />
       </div>
 

@@ -6,6 +6,8 @@ import { getTemplateById } from '../lib/templates';
 import { jitCompiler } from '../lib/jitCompiler';
 import { remotionExampleComponents } from '../lib/exampleComponents';
 import { nanoid } from 'nanoid';
+import { saveMediaFile, getMediaFile, deleteMediaFile } from '../lib/mediaStorage';
+
 
 interface EditorState {
   // Projects
@@ -251,8 +253,18 @@ export const useEditorStore = create<EditorState>()(
       },
 
       importMedia: async (file: File) => {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
           const mediaId = nanoid();
+          console.log(`[IndexedDB] Importing file: ${file.name}, type: ${file.type}, size: ${file.size} bytes. ID: ${mediaId}`);
+          try {
+            await saveMediaFile(mediaId, file);
+            console.log(`[IndexedDB] Successfully saved file ${file.name} to IndexedDB.`);
+          } catch (e) {
+            console.error(`[IndexedDB] Error saving file ${file.name} to IndexedDB:`, e);
+            reject(e);
+            return;
+          }
+
           const url = URL.createObjectURL(file);
 
           const mediaType: MediaType = file.type.startsWith('video/') ? 'video'
@@ -325,6 +337,10 @@ export const useEditorStore = create<EditorState>()(
       },
 
       deleteMedia: (mediaId: string) => {
+        deleteMediaFile(mediaId).catch((err) => {
+          console.error('Failed to delete media from IndexedDB:', err);
+        });
+
         set((state) => {
           if (!state.currentProject) return state;
           const updatedProject = {
@@ -981,32 +997,94 @@ export const useEditorStore = create<EditorState>()(
     {
       name: 'remotion-editor-storage',
       partialize: (state) => ({
-        projects: state.projects,
+        projects: (state.projects || []).map((project) => ({
+          ...project,
+          media: (project.media || []).map((mediaItem) => ({
+            ...mediaItem,
+            src: '',
+          })),
+        })),
         componentLibrary: state.componentLibrary,
         lastOpenedProjectId: state.lastOpenedProjectId,
       }),
-      onRehydrateStorage: () => (state, error) => {
-        if (error || !state) {
-          return;
-        }
+      onRehydrateStorage: () => {
+        console.log('[IndexedDB] onRehydrateStorage outer function called.');
+        return (state, error) => {
+          console.log('[IndexedDB] onRehydrateStorage inner function called. State:', state, 'Error:', error);
+          if (error || !state) {
+            return;
+          }
 
-        const hydratedProjects = (state.projects || []).map(hydrateProjectComponents);
-        const hydratedLibrary = (state.componentLibrary || []).map(compileComponent);
-        const projectToLoad =
-          hydratedProjects.find((project) => project.id === state.lastOpenedProjectId) ||
-          hydratedProjects[0] ||
-          null;
+          const hydratedProjects = (state.projects || []).map(hydrateProjectComponents);
+          const hydratedLibrary = (state.componentLibrary || []).map(compileComponent);
+          const projectToLoad =
+            hydratedProjects.find((project) => project.id === state.lastOpenedProjectId) ||
+            hydratedProjects[0] ||
+            null;
 
-        useEditorStore.setState({
-          projects: hydratedProjects,
-          componentLibrary: hydratedLibrary.length > 0 ? hydratedLibrary : sampleComponentLibrary.map(compileComponent),
-          currentProject: projectToLoad,
-          selectedLayerId: projectToLoad?.scenes[0]?.layers[0]?.id || projectToLoad?.layers[0]?.id || null,
-          isPlaying: false,
-          currentFrame: 0,
-          lastOpenedProjectId: projectToLoad?.id || null,
-        });
+          // Defer store update to next event loop tick so useEditorStore is fully initialized
+          setTimeout(() => {
+            useEditorStore.setState({
+              projects: hydratedProjects,
+              componentLibrary: hydratedLibrary.length > 0 ? hydratedLibrary : sampleComponentLibrary.map(compileComponent),
+              currentProject: projectToLoad,
+              selectedLayerId: projectToLoad?.scenes[0]?.layers[0]?.id || projectToLoad?.layers[0]?.id || null,
+              isPlaying: false,
+              currentFrame: 0,
+              lastOpenedProjectId: projectToLoad?.id || null,
+            });
+
+            // Asynchronously load media blobs from IndexedDB and regenerate Object URLs
+            (async () => {
+              console.log('[IndexedDB] Starting rehydration of media files for projects:', hydratedProjects);
+              let hasUpdates = false;
+              const updatedProjects = await Promise.all(
+                hydratedProjects.map(async (project) => {
+                  let projectUpdated = false;
+                  const updatedMedia = await Promise.all(
+                    (project.media || []).map(async (mediaItem) => {
+                      try {
+                        console.log(`[IndexedDB] Fetching media file for ID: ${mediaItem.id} (${mediaItem.name})`);
+                        const blob = await getMediaFile(mediaItem.id);
+                        if (blob) {
+                          const objectUrl = URL.createObjectURL(blob);
+                          projectUpdated = true;
+                          hasUpdates = true;
+                          console.log(`[IndexedDB] Restored media file for ID: ${mediaItem.id}, created URL: ${objectUrl}`);
+                          return { ...mediaItem, src: objectUrl };
+                        } else {
+                          console.warn(`[IndexedDB] Blob NOT found in DB for ID: ${mediaItem.id} (${mediaItem.name})`);
+                        }
+                      } catch (e) {
+                        console.error(`[IndexedDB] Failed to restore media file ${mediaItem.id} from IndexedDB:`, e);
+                      }
+                      return mediaItem;
+                    })
+                  );
+                  if (projectUpdated) {
+                    return { ...project, media: updatedMedia };
+                  }
+                  return project;
+                })
+              );
+
+              if (hasUpdates) {
+                const currentProject = useEditorStore.getState().currentProject;
+                const updatedCurrentProject = currentProject
+                  ? updatedProjects.find((p) => p.id === currentProject.id) || currentProject
+                  : null;
+
+                console.log('[IndexedDB] Updating store with rehydrated projects:', updatedProjects);
+                useEditorStore.setState({
+                  projects: updatedProjects,
+                  currentProject: updatedCurrentProject,
+                });
+              } else {
+                console.log('[IndexedDB] No media files were rehydrated.');
+              }
+            })();
+          }, 0);
+        };
       },
-    }
-  )
+  })
 );

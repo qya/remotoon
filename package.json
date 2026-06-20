@@ -10,15 +10,24 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@remotion/cli": "^4.0.431",
-    "@remotion/player": "^4.0.431",
+    "@monaco-editor/react": "^4.7.0",
+    "@react-three/fiber": "^9.5.0",
+    "@remotion/cli": "4.0.431",
+    "@remotion/lottie": "4.0.431",
+    "@remotion/player": "4.0.431",
+    "@remotion/shapes": "4.0.431",
+    "@remotion/three": "4.0.431",
+    "@remotion/transitions": "4.0.431",
+    "@types/three": "^0.176.0",
     "lucide-react": "^0.576.0",
+    "monaco-editor": "^0.55.1",
     "nanoid": "^5.1.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-resizable-panels": "^4.7.0",
     "react-router-dom": "^7.13.1",
-    "remotion": "^4.0.431",
+    "remotion": "4.0.431",
+    "three": "^0.178.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

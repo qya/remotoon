@@ -43,6 +43,13 @@ export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) =>
     switch (layer.type) {
       case 'media':
         if (!media) return null;
+        if (!media.src) {
+          return (
+            <div className="flex items-center justify-center w-full h-full text-gray-500 bg-[#1a1a2e]/50 border border-dashed border-gray-700 rounded p-2 text-center">
+              <span className="text-xs text-gray-400">Loading or missing local asset. If this is a legacy import, please re-import the file.</span>
+            </div>
+          );
+        }
 
         if (media.type === 'video') {
           return (

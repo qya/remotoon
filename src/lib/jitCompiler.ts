@@ -1,13 +1,13 @@
 import * as Babel from '@babel/standalone';
 import type { CompileResult } from '../types';
 import type { ComponentType } from 'react';
-import React from 'react';
-import { 
-  interpolate, 
-  useCurrentFrame, 
-  useVideoConfig, 
-  AbsoluteFill, 
-  Sequence, 
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  interpolate,
+  useCurrentFrame,
+  useVideoConfig,
+  AbsoluteFill,
+  Sequence,
   staticFile,
   Video,
   Img,
@@ -16,64 +16,171 @@ import {
   Easing,
 } from 'remotion';
 
-// Create a React object that includes Remotion hooks
-// Users should destructure from React: const { useCurrentFrame } = React;
-const ReactWithRemotion = {
-  ...React,
-  useCurrentFrame,
-  useVideoConfig,
-  AbsoluteFill,
-  interpolate,
-  Sequence,
-  staticFile,
-  Video,
-  Img,
-  Audio,
-  spring,
-  Easing,
+// Additional Remotion packages
+import { Lottie } from '@remotion/lottie';
+import * as RemotionShapes from '@remotion/shapes';
+import { ThreeCanvas } from '@remotion/three';
+import {
+  TransitionSeries,
+  linearTiming,
+  springTiming,
+} from '@remotion/transitions';
+import { clockWipe } from '@remotion/transitions/clock-wipe';
+import { fade } from '@remotion/transitions/fade';
+import { flip } from '@remotion/transitions/flip';
+import { slide } from '@remotion/transitions/slide';
+import { wipe } from '@remotion/transitions/wipe';
+import * as THREE from 'three';
+
+const PROPS_REGEX = /\$PROPS\.([A-Za-z_][A-Za-z0-9_]*)/g;
+const IMPORT_REGEXES: RegExp[] = [
+  /import\s+type\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];?/g,
+  /import\s+\w+\s*,\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];?/g,
+  /import\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];?/g,
+  /import\s+\*\s+as\s+\w+\s+from\s*["'][^"']+["'];?/g,
+  /import\s+\w+\s+from\s*["'][^"']+["'];?/g,
+  /import\s*["'][^"']+["'];?/g,
+];
+
+const stripMarkdownFences = (code: string): string => {
+  let result = code.trim();
+  result = result.replace(/^```(?:tsx?|jsx?)?\n?/, '');
+  result = result.replace(/\n?```\s*$/, '');
+  return result.trim();
 };
 
-// Props placeholder pattern: $PROPS.KEY or $PROPS.KEY_WITH_UNDERSCORES
-const PROPS_REGEX = /\$PROPS\.([A-Za-z_][A-Za-z0-9_]*)/g;
+const convertPropsPlaceholders = (code: string): string => {
+  // Keep runtime props in a closure variable so both function declarations
+  // and arrow components can read placeholders without signature rewriting.
+  return code.replace(PROPS_REGEX, '__props.$1');
+};
 
-/**
- * Convert $PROPS placeholders to function parameter references
- * This allows passing props at runtime without recompiling
- * 
- * Example:
- *   $PROPS.TEXT -> props.TEXT
- *   $PROPS.TITLE || "default" -> props.TITLE || "default"
- */
-function convertPropsPlaceholders(code: string): string {
-  return code.replace(PROPS_REGEX, 'props.$1');
-}
+const stripImports = (code: string): string => {
+  return IMPORT_REGEXES.reduce((acc, regex) => acc.replace(regex, ''), code);
+};
 
-/**
- * Wrap component code to accept props parameter
- * Updates `function Component()` to `function Component(props = {})`
- * and converts $PROPS references to props.
- */
-function wrapComponentWithProps(code: string): string {
-  // First convert $PROPS to props. references
-  let processedCode = convertPropsPlaceholders(code);
-  
-  // Update function signature to accept props parameter
-  // Match: function Component() or function Component ()
-  // Replace with: function Component(props = {})
-  processedCode = processedCode.replace(
-    /function\s+Component\s*\(\s*\)/g,
-    'function Component(props = {})'
+// Strip destructuring from React to avoid duplicate declarations with sandbox scope
+// e.g., const { useCurrentFrame, useVideoConfig } = React; -> (removed)
+const stripReactDestructuring = (code: string): string => {
+  // Match patterns like: const { useCurrentFrame, useVideoConfig } = React;
+  // or: const { useCurrentFrame } = ReactWithRemotion;
+  return code
+    .replace(/const\s*\{\s*[^}]+\}\s*=\s*React\s*;?/g, '')
+    .replace(/const\s*\{\s*[^}]+\}\s*=\s*ReactWithRemotion\s*;?/g, '');
+};
+
+const stripExports = (code: string): string => {
+  return code
+    .replace(/\bexport\s+default\s+/g, '')
+    .replace(/\bexport\s+(?=const|let|var|function|class)/g, '');
+};
+
+const detectComponentName = (code: string): string | null => {
+  const namedFunctionMatch = code.match(/function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/);
+  const namedArrowMatch = code.match(
+    /(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/
   );
-  
-  return processedCode;
+
+  if (namedFunctionMatch?.[1] === 'Component' || namedArrowMatch?.[1] === 'Component') {
+    return 'Component';
+  }
+
+  return namedFunctionMatch?.[1] ?? namedArrowMatch?.[1] ?? null;
+};
+
+// Extract component body from LLM-generated code (template-style)
+// This handles the pattern: export const MyAnimation = () => { ... };
+function extractComponentBody(code: string): string {
+  let cleaned = code;
+
+  // Remove type imports: import type { ... } from "...";
+  cleaned = cleaned.replace(
+    /import\s+type\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];?/g,
+    "",
+  );
+  // Remove combined default + named imports: import X, { ... } from "...";
+  cleaned = cleaned.replace(
+    /import\s+\w+\s*,\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];?/g,
+    "",
+  );
+  // Remove multi-line named imports: import { ... } from "...";
+  cleaned = cleaned.replace(
+    /import\s*\{[\s\S]*?\}\s*from\s*["'][^"']+["'];?/g,
+    "",
+  );
+  // Remove namespace imports: import * as X from "...";
+  cleaned = cleaned.replace(
+    /import\s+\*\s+as\s+\w+\s+from\s*["'][^"']+["'];?/g,
+    "",
+  );
+  // Remove default imports: import X from "...";
+  cleaned = cleaned.replace(/import\s+\w+\s+from\s*["'][^"']+["'];?/g, "");
+  // Remove side-effect imports: import "...";
+  cleaned = cleaned.replace(/import\s*["'][^"']+["'];?/g, "");
+
+  cleaned = cleaned.trim();
+
+  // Extract body from "export const MyAnimation = () => { ... };"
+  const match = cleaned.match(
+    /^([\s\S]*?)export\s+const\s+\w+\s*=\s*\(\s*\)\s*=>\s*\{([\s\S]*)\};?\s*$/,
+  );
+
+  if (match) {
+    const helpers = match[1].trim();
+    const body = match[2].trim();
+    return helpers ? `${helpers}\n\n${body}` : body;
+  }
+
+  return cleaned;
 }
 
 export class JITCompiler {
   private scope: Record<string, any>;
 
   constructor() {
+    // Create a React object that includes Remotion helpers. This supports code
+    // patterns like: const { useCurrentFrame } = React;
+    const ReactWithRemotion = {
+      ...React,
+      useCurrentFrame,
+      useVideoConfig,
+      AbsoluteFill,
+      interpolate,
+      Sequence,
+      staticFile,
+      Video,
+      Img,
+      Audio,
+      spring,
+      Easing,
+      // Additional packages
+      useEffect,
+      useMemo,
+      useRef,
+      useState,
+    };
+
     this.scope = {
+      // React with Remotion helpers merged - access via React.useCurrentFrame or destructuring
       React: ReactWithRemotion,
+      // Direct identifiers for code that imports from remotion (imports are stripped)
+      useCurrentFrame,
+      useVideoConfig,
+      AbsoluteFill,
+      interpolate,
+      Sequence,
+      staticFile,
+      Video,
+      Img,
+      Audio,
+      spring,
+      Easing,
+      // React hooks available directly
+      useState: React.useState,
+      useEffect: React.useEffect,
+      useMemo: React.useMemo,
+      useRef: React.useRef,
+      useCallback: React.useCallback,
       // Global utilities available in the sandbox
       console,
       Math,
@@ -91,6 +198,38 @@ export class JITCompiler {
       clearInterval,
       requestAnimationFrame,
       cancelAnimationFrame,
+      // @remotion/shapes
+      Rect: RemotionShapes.Rect,
+      Circle: RemotionShapes.Circle,
+      Triangle: RemotionShapes.Triangle,
+      Star: RemotionShapes.Star,
+      Polygon: RemotionShapes.Polygon,
+      Ellipse: RemotionShapes.Ellipse,
+      Heart: RemotionShapes.Heart,
+      Pie: RemotionShapes.Pie,
+      makeRect: RemotionShapes.makeRect,
+      makeCircle: RemotionShapes.makeCircle,
+      makeTriangle: RemotionShapes.makeTriangle,
+      makeStar: RemotionShapes.makeStar,
+      makePolygon: RemotionShapes.makePolygon,
+      makeEllipse: RemotionShapes.makeEllipse,
+      makeHeart: RemotionShapes.makeHeart,
+      makePie: RemotionShapes.makePie,
+      // @remotion/lottie
+      Lottie,
+      // @remotion/three
+      ThreeCanvas,
+      // @remotion/transitions
+      TransitionSeries,
+      linearTiming,
+      springTiming,
+      fade,
+      slide,
+      wipe,
+      flip,
+      clockWipe,
+      // three.js
+      THREE,
     };
   }
 
@@ -101,8 +240,21 @@ export class JITCompiler {
         return { success: false, component: null, error: 'Code is empty' };
       }
 
-      // Convert $PROPS placeholders to props. references for runtime prop passing
-      const processedCode = wrapComponentWithProps(code);
+      const sanitizedCode = stripMarkdownFences(code);
+      
+      // Auto-detect template style: export const X = () => {...}
+      // This pattern is common in template examples
+      const isTemplateStyle = /export\s+const\s+\w+\s*=\s*\(\s*\)\s*=>/.test(sanitizedCode);
+      
+      if (isTemplateStyle) {
+        return this.compileTemplateStyle(sanitizedCode);
+      }
+
+      const withoutImports = stripImports(sanitizedCode);
+      const withoutReactDestructuring = stripReactDestructuring(withoutImports);
+      const withoutExports = stripExports(withoutReactDestructuring);
+      const processedCode = convertPropsPlaceholders(withoutExports);
+      const detectedComponentName = detectComponentName(processedCode);
 
       // Transform JSX/TSX menggunakan Babel standalone
       let transformed: string;
@@ -117,17 +269,17 @@ export class JITCompiler {
             plugins: ['jsx', 'typescript'],
           },
         });
-        
+
         if (!result.code) {
           return { success: false, component: null, error: 'Babel transform returned empty code' };
         }
         transformed = result.code;
       } catch (babelError) {
         console.error('Babel transform error:', babelError);
-        return { 
-          success: false, 
-          component: null, 
-          error: babelError instanceof Error ? `Transform: ${babelError.message}` : 'Babel transform failed' 
+        return {
+          success: false,
+          component: null,
+          error: babelError instanceof Error ? `Transform: ${babelError.message}` : 'Babel transform failed'
         };
       }
 
@@ -136,19 +288,24 @@ export class JITCompiler {
       const sandboxValues = Object.values(this.scope);
 
       try {
+        const componentLookup = detectedComponentName
+          ? `typeof ${detectedComponentName} !== 'undefined' ? ${detectedComponentName} :`
+          : '';
+
         // Build the executor function
-        // The Component function will accept props as its first parameter
         const executor = new Function(
           ...sandboxKeys,
           `
           "use strict";
           var exports = {};
           var module = { exports: exports };
+          var __props = {};
           
           ${transformed}
           
           // Try to find the component in various ways
           var ComponentFn = 
+            ${componentLookup}
             typeof Component !== 'undefined' ? Component :
             exports.Component || 
             exports.default || 
@@ -156,34 +313,35 @@ export class JITCompiler {
             module.exports.default ||
             module.exports;
           
-          // Wrap the component to handle props properly
-          // This ensures $PROPS -> props conversion works
-          return ComponentFn;
+          if (typeof ComponentFn !== 'function') {
+            return null;
+          }
+
+          // Wrapper keeps $PROPS placeholders working through closure variable.
+          return function WrappedComponent(props) {
+            __props = props || {};
+            return React.createElement(ComponentFn, props || {});
+          };
           `
         );
 
         // Execute with sandbox values
-        const ComponentFn = executor(...sandboxValues) as Function;
-        
-        // Wrap the component to provide props support
-        // This wrapper is stable and won't cause remounts when props change
-        const Component = (props: Record<string, any> = {}) => {
-          return ComponentFn(props);
-        };
+        const Component = executor(...sandboxValues) as Function | null;
 
         if (!Component) {
-          return { 
-            success: false, 
-            component: null, 
-            error: 'No Component found. Make sure your code defines a Component function.' 
+          return {
+            success: false,
+            component: null,
+            error:
+              'No component found. Define a React component (for example `function Component()` or `export const MyAnimation = () => { ... }`).'
           };
         }
 
         if (typeof Component !== 'function') {
-          return { 
-            success: false, 
-            component: null, 
-            error: `Invalid Component type: ${typeof Component}. Expected a function.` 
+          return {
+            success: false,
+            component: null,
+            error: `Invalid Component type: ${typeof Component}. Expected a function.`
           };
         }
 
@@ -206,12 +364,71 @@ export class JITCompiler {
     }
   }
 
+  // Compile using template-style extraction (for code like: export const MyAnimation = () => {...})
+  compileTemplateStyle(code: string): CompileResult {
+    if (!code?.trim()) {
+      return { success: false, component: null, error: 'No code provided' };
+    }
+
+    try {
+      const withoutReactDestructuring = stripReactDestructuring(code);
+      const processedCode = convertPropsPlaceholders(withoutReactDestructuring);
+      const componentBody = extractComponentBody(processedCode);
+      const wrappedSource = `const DynamicAnimation = () => {\n${componentBody}\n};`;
+
+      const transpiled = Babel.transform(wrappedSource, {
+        presets: ['react', 'typescript'],
+        filename: 'dynamic-animation.tsx',
+      });
+
+      if (!transpiled.code) {
+        return { success: false, component: null, error: 'Transpilation failed' };
+      }
+
+      const sandboxKeys = Object.keys(this.scope);
+      const sandboxValues = Object.values(this.scope);
+
+      const wrappedCode = `
+        var __props = {};
+        ${transpiled.code}
+        return function WrappedComponent(props) {
+          __props = props || {};
+          return React.createElement(DynamicAnimation, props || {});
+        };
+      `;
+
+      const createComponent = new Function(
+        ...sandboxKeys,
+        wrappedCode,
+      );
+
+      const Component = createComponent(...sandboxValues);
+
+      if (typeof Component !== 'function') {
+        return {
+          success: false,
+          component: null,
+          error: 'Code must be a function that returns a React component',
+        };
+      }
+
+      return { success: true, component: Component as ComponentType<any> };
+    } catch (error) {
+      console.error('Template-style compilation error:', error);
+      return {
+        success: false,
+        component: null,
+        error: error instanceof Error ? error.message : 'Unknown compilation error',
+      };
+    }
+  }
+
   // Quick test if code can be compiled
   testCompile(code: string): { success: boolean; error?: string } {
     const result = this.compile(code);
-    return { 
-      success: result.success, 
-      error: result.error 
+    return {
+      success: result.success,
+      error: result.error
     };
   }
 }
