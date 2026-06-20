@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Video, 
   Sparkles, 
   Layers, 
   Zap, 
@@ -30,9 +29,7 @@ export const Landing: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#00a8e8] to-[#0066aa] rounded-xl flex items-center justify-center">
-                <Video className="w-6 h-6 text-white" />
-              </div>
+              <img src="/logo.svg" alt="Remotoon Logo" className="w-10 h-10 object-contain" />
               <span className="text-xl font-bold text-white">Remotoon</span>
             </div>
             
@@ -291,9 +288,7 @@ export const Landing: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-[#00a8e8] to-[#0066aa] rounded-lg flex items-center justify-center">
-                <Video className="w-5 h-5 text-white" />
-              </div>
+              <img src="/logo.svg" alt="Remotoon Logo" className="w-8 h-8 object-contain" />
               <span className="text-lg font-bold text-white">Remotoon</span>
             </div>
             

@@ -1,125 +1,94 @@
-# 🎬 Remotion Editor
+<table width="100%">
+  <tr>
+    <td align="left" width="120">
+      <img src="public/logo.svg" alt="Remotoon Logo" width="100" />
+    </td>
+    <td align="right">
+      <h1>Remotoon</h1>
+      <h3 style="margin-top: -10px;">A premium, powerful Just-in-Time (JIT) Component Studio for creating dynamic videos with [Remotion](https://www.remotion.dev/).</h3>
+    </td>
+  </tr>
+</table>
 
-A powerful **Just-in-Time (JIT) Component Studio** for creating dynamic videos with [Remotion](https://www.remotion.dev/). Build video compositions using React components with live compilation, preview, and timeline editing.
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat)](LICENSE)
 
-![Remotion Editor Screenshot](https://via.placeholder.com/800x450/1a1a2e/ffffff?text=Remotion+Editor)
+# 🎬 Remotion Editor (Remotoon)
 
-## ✨ Features
+A premium, powerful **Just-in-Time (JIT) Component Studio** for creating dynamic videos with [Remotion](https://www.remotion.dev/). Build and arrange video compositions using custom React components with live compilation, timeline controls, assets/effects libraries, and real-time previews.
 
-- 🚀 **JIT Compilation** - Write and compile React components dynamically using Babel
-- 🎨 **Multiple Templates** - Portrait (9:16), Landscape (16:9), and Square (1:1) formats
-- 📐 **Visual Editor** - Edit code with real-time error checking and validation
-- 🎬 **Live Preview** - Watch your changes instantly with Remotion Player
-- 🕐 **Timeline Control** - Frame-accurate playback and seeking
-- 🧩 **Component Parts** - Build complex videos from multiple component layers
-- 💾 **Project Management** - Save and switch between multiple projects
+![Remotion Editor Banner](public/screenshot.png)
+
+## ✨ Core Features & Enhancements
+
+- 🚀 **JIT Compilation** - Write and compile custom React / TSX components dynamically in the browser using Babel Standalone.
+- 🎨 **Dynamic Sidebar Tabs & Panel System** - A modular sidebar containing:
+  - **Assets**: Upload and manage media assets.
+  - **Audio & SFX**: Integrated audio track selector with a built-in **Sound Effects (SFX)** library powered by `@remotion/sfx`.
+  - **Text**: Custom text styling overlays.
+  - **Stickers & Emojis**: Interactive sticker selection alongside a searchable **Animated Emojis** tab powered by `@remotion/animated-emoji`.
+  - **Effects, Transitions & Filters**: Advanced options for fine-tuning visual aesthetics and scene transitions.
+- ✏️ **Header Component Editing** - Inline editable Component Names in detail and edit headers, matching the project name workflow.
+- 🌐 **Dynamic SEO & Metadata** - Dynamic document titles and meta tags updated automatically per view/page to optimize SEO and browser history.
+- 📐 **Multiple Formats** - Portrait (9:16) for TikTok/Reels, Landscape (16:9) for standard YouTube, and Square (1:1) for Instagram feeds.
+- 🕐 **Timeline Control** - Frame-accurate playback, scrubbing, and seeking with a customized preview player.
+
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 
 ### Installation
 
 ```bash
-# Clone atau buka folder project
+# Clone or open the project folder
 cd remotoon
 
 # Install dependencies
 npm install
 
-# Start development server
+# Start the development server
 npm run dev
 ```
 
-Buka browser dan akses `http://localhost:3000`
+Open your browser and navigate to `http://localhost:5173` (or the port specified by Vite).
+
+---
 
 ## 📝 Usage
 
-### 1. Create a New Project
+### 1. Create or Manage Projects
+Click the **Create New Project** button or `+` icon in the project manager. Select a format:
+- **Portrait (9:16)** - 1080×1920 (Reels, TikTok)
+- **Landscape (16:9)** - 1920×1080 (YouTube)
+- **Square (1:1)** - 1080×1080 (Instagram Feed)
 
-Klik tombol "Create New Project" atau ikon `+` di panel Projects. Pilih template:
-- **Portrait (9:16)** - Untuk Instagram Reels, TikTok, YouTube Shorts
-- **Landscape (16:9)** - Untuk video YouTube standard
-- **Square (1:1)** - Untuk Instagram Feed
-
-### 2. Edit Components
-
-Setiap project terdiri dari satu atau lebih component parts:
-
-1. Pilih tab **Components** untuk melihat daftar parts
-2. Klik component untuk edit
-3. Pindah ke tab **Code** untuk mengedit kode React
-
-### 3. Write Dynamic Components
-
-Kode component menggunakan React + Remotion APIs:
-
+### 2. Live Code & JIT Components
+Choose any component layer from the **Components Panel**, then shift to the **Code Editor** view. You can write standard TSX with live updates:
 ```tsx
 const { useCurrentFrame, useVideoConfig, AbsoluteFill, interpolate } = React;
 
-function Component() {
+function MyComponent() {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  
-  // Progress animation (0 to 1)
-  const progress = frame / durationInFrames;
-  
-  // Interpolate values
-  const opacity = interpolate(frame, [0, 30], [0, 1]);
-  const scale = interpolate(frame, [0, 60], [0.8, 1]);
+  const opacity = interpolate(frame, [0, 30], [0, 1], { extrapolateRight: 'clamp' });
   
   return (
-    <AbsoluteFill
-      style={{
-        background: '#1a1a2e',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <h1 style={{ 
-        fontSize: '72px', 
-        color: '#e94560',
-        opacity,
-        transform: `scale(${scale})`,
-      }}>
-        Hello World
-      </h1>
-      <p>Frame: {frame}</p>
+    <AbsoluteFill style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
+      <h1 style={{ color: '#38bdf8', opacity, fontSize: '4rem' }}>Dynamic Title</h1>
     </AbsoluteFill>
   );
 }
 ```
 
-### 4. Available APIs
+### 3. Sound Effects (SFX) & Animated Emojis
+- Go to the **Audio** tab in the Left Sidebar and select the **SFX** tab to browse sound effects from `@remotion/sfx` and preview them directly.
+- Go to the **Stickers** tab and select the **Emojis** tab to search and add high-quality animated emojis powered by `@remotion/animated-emoji`.
 
-Dalam component code, Anda memiliki akses ke:
-
-**React**
-- `React` - Full React API
-
-**Remotion**
-- `useCurrentFrame()` - Get current frame number
-- `useVideoConfig()` - Get video config (fps, duration, width, height)
-- `AbsoluteFill` - Full-size container component
-- `Sequence` - Time-based component wrapper
-- `interpolate()` - Value interpolation utility
-- `staticFile()` - Reference static files
-
-**Utilities**
-- `spring(frame, fps, config)` - Spring physics animation
-- `Easing.linear`, `Easing.easeIn`, `Easing.easeOut`, `Easing.easeInOut`, `Easing.bounce`
-
-### 5. Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl/Cmd + S` | Save code changes |
-| `Space` | Play/Pause |
-| `← / →` | Seek backward/forward |
+---
 
 ## 🏗️ Project Structure
 
@@ -127,68 +96,58 @@ Dalam component code, Anda memiliki akses ke:
 remotoon/
 ├── src/
 │   ├── components/
-│   │   ├── editor/          # Editor UI components
+│   │   ├── editor/          # Editor & Sidebar UI Components
+│   │   │   ├── AssetsPanel.tsx
+│   │   │   ├── AudioPanel.tsx        # Features SFX search/preview
 │   │   │   ├── CodeEditor.tsx
-│   │   │   ├── PartsPanel.tsx
-│   │   │   ├── ProjectManager.tsx
+│   │   │   ├── ComponentsPanel.tsx
+│   │   │   ├── StickersPanel.tsx      # Features Animated Emojis tab
+│   │   │   ├── LeftSidebar.tsx        # Dynamic tab/panel navigation
+│   │   │   ├── RightSidebar.tsx
+│   │   │   ├── SceneManager.tsx
 │   │   │   └── TemplateSelector.tsx
-│   │   └── preview/         # Preview components
+│   │   └── preview/         # Playback & Video Previews
 │   │       └── PreviewPlayer.tsx
-│   ├── compositions/        # Remotion compositions
-│   │   └── DynamicComposition.tsx
-│   ├── lib/
-│   │   ├── jitCompiler.ts   # Babel JIT compiler
-│   │   └── templates.ts     # Template definitions
 │   ├── store/
 │   │   └── editorStore.ts   # Zustand state management
-│   ├── types/
-│   │   └── index.ts         # TypeScript types
-│   ├── App.tsx              # Main app component
-│   ├── RemotionRoot.tsx     # Remotion context provider
-│   └── main.tsx             # Entry point
-├── index.html
-├── vite.config.ts
-├── tailwind.config.js
-└── package.json
+│   ├── App.tsx              # Main Router and Dynamic SEO Meta setup
+│   ├── RemotionRoot.tsx     # Remotion composition context
+│   └── main.tsx             # Application Entry
+├── package.json
+└── vite.config.ts
 ```
 
-## 🛠️ Technologies
+---
 
-- [React](https://react.dev/) - UI library
-- [Vite](https://vitejs.dev/) - Build tool
-- [TypeScript](https://www.typescriptlang.org/) - Type safety
-- [Tailwind CSS](https://tailwindcss.com/) - Styling
-- [Remotion](https://www.remotion.dev/) - Video rendering
-- [Zustand](https://github.com/pmndrs/zustand) - State management
-- [Babel Standalone](https://babeljs.io/docs/en/babel-standalone) - JIT compilation
-- [Lucide React](https://lucide.dev/) - Icons
+## 🛠️ Technologies Used
 
-## 🎨 Template System
+- **Framework**: [React](https://react.dev/) + [Vite](https://vitejs.dev/)
+- **Video Engine**: [Remotion](https://www.remotion.dev/)
+- **Code Editing**: [@monaco-editor/react](https://github.com/suren-atoyan/monaco-react)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **State Management**: [Zustand](https://github.com/pmndrs/zustand)
+- **Rich Assets**:
+  - `@remotion/animated-emoji` for beautiful vector animated emojis
+  - `@remotion/sfx` for integrated, license-free audio effects
+- **Dynamic Compilation**: `@babel/standalone`
 
-Templates mendefinisikan dimensi dan default code untuk setiap format video:
+---
 
-| Template | Resolution | FPS | Duration | Best For |
-|----------|------------|-----|----------|----------|
-| Portrait | 1080×1920 | 30 | 150f (5s) | Reels, TikTok |
-| Landscape | 1920×1080 | 30 | 150f (5s) | YouTube |
-| Square | 1080×1080 | 30 | 150f (5s) | Instagram |
-
-## 🧪 Development
+## 🧪 Development & Production Commands
 
 ```bash
-# Run dev server
+# Start local dev server
 npm run dev
 
-# Build for production
+# Run TypeScript compilation and build production assets
 npm run build
 
-# Preview production build
+# Preview the local production build
 npm run preview
 ```
 
 ## 📄 License
 
-MIT License - feel free to use this project for personal or commercial purposes.
 
 ## 🙏 Credits
 

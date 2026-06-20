@@ -106,9 +106,7 @@ function Editor() {
 
           <div className="w-px h-6 bg-[#333]" />
 
-          <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
-            <div className="w-3 h-3 bg-black rounded-sm" />
-          </div>
+          <img src="/logo.svg" alt="Remotoon Logo" className="w-6 h-6 object-contain" />
 
           {isEditingName ? (
             <input

@@ -289,7 +289,7 @@ export const templates: Template[] = [
   {
     id: 'portrait-9-16',
     name: 'Portrait (9:16)',
-    description: 'Perfect untuk Instagram Reels, TikTok, dan YouTube Shorts',
+    description: 'Perfect for Instagram Reels, TikTok, and YouTube Shorts',
     aspectRatio: 'portrait',
     width: 1080,
     height: 1920,
@@ -300,7 +300,7 @@ export const templates: Template[] = [
   {
     id: 'landscape-16-9',
     name: 'Landscape (16:9)',
-    description: 'Standard format untuk YouTube dan video profesional',
+    description: 'Standard format for YouTube and professional videos',
     aspectRatio: 'landscape',
     width: 1920,
     height: 1080,
@@ -311,7 +311,7 @@ export const templates: Template[] = [
   {
     id: 'square-1-1',
     name: 'Square (1:1)',
-    description: 'Instagram Post dan feed format',
+    description: 'Instagram Post and feed format',
     aspectRatio: 'square',
     width: 1080,
     height: 1080,
