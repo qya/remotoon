@@ -31,6 +31,7 @@ type DragState = {
   layerId: string;
   startX: number;
   initialStartFrame: number;
+  initialTrackWidth: number;
 } | null;
 
 type ResizeState = {
@@ -39,7 +40,10 @@ type ResizeState = {
   startX: number;
   initialStartFrame: number;
   initialDuration: number;
+  initialTrackWidth: number;
 } | null;
+
+const SNAP_THRESHOLD_FRAMES = 5;
 
 interface ContextMenuState {
   visible: boolean;
@@ -69,9 +73,11 @@ export const Timeline: React.FC<TimelineProps> = ({
   onSeek,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [clipboardLayer, setClipboardLayer] = useState<any>(null);
+  const [snapFrame, setSnapFrame] = useState<number | null>(null);
 
   const currentProject = useEditorStore((state) => state.currentProject);
   const getCurrentScene = useEditorStore((state) => state.getCurrentScene);
@@ -90,10 +96,32 @@ export const Timeline: React.FC<TimelineProps> = ({
   const toggleLayerVisibility = useEditorStore((state) => state.toggleLayerVisibility);
   const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
   const addLayer = useEditorStore((state) => state.addLayer);
+  const isPlaying = useEditorStore((state) => state.isPlaying);
+  const setIsPlaying = useEditorStore((state) => state.setIsPlaying);
 
   const reorderLayers = useEditorStore((state) => state.reorderLayers);
 
   const [zoom, setZoom] = useState(1);
+
+  // ── Ruler ticks ────────────────────────────────────────────────────────────
+  const rulerTicks = useMemo(() => {
+    const ticks = [];
+    const totalFrames = durationInFrames;
+    // Pick a tick interval so we get ~15-25 major ticks
+    const secondsTotal = totalFrames / fps;
+    let tickEverySeconds = 1;
+    const candidates = [0.5, 1, 2, 5, 10, 15, 30, 60];
+    for (const c of candidates) {
+      tickEverySeconds = c;
+      if (secondsTotal / c <= 24 * zoom) break;
+    }
+    const tickEveryFrames = tickEverySeconds * fps;
+    for (let f = 0; f <= totalFrames; f += tickEveryFrames) {
+      ticks.push(f);
+    }
+    return ticks;
+  }, [durationInFrames, fps, zoom]);
+
   const [dragState, setDragState] = useState<DragState>(null);
   const [resizeState, setResizeState] = useState<ResizeState>(null);
   const [hoveredLayer, setHoveredLayer] = useState<string | null>(null);
@@ -176,7 +204,12 @@ export const Timeline: React.FC<TimelineProps> = ({
     e.stopPropagation();
     e.preventDefault();
     isDraggingRef.current = false;
-    setDragState({ layerId, startX: e.clientX, initialStartFrame: layer.startFrame });
+    setDragState({
+      layerId,
+      startX: e.clientX,
+      initialStartFrame: layer.startFrame,
+      initialTrackWidth: getTrackWidth(),
+    });
   };
 
   // ── Resize ─────────────────────────────────────────────────────────────────
@@ -196,6 +229,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       startX: e.clientX,
       initialStartFrame: layer.startFrame,
       initialDuration: layer.durationInFrames,
+      initialTrackWidth: getTrackWidth(),
     });
   };
 
@@ -291,46 +325,111 @@ export const Timeline: React.FC<TimelineProps> = ({
     [selectedLayerId, toggleLayerLock]
   );
 
+  // ── Snap helpers (via refs to avoid breaking drag listeners) ─────────────
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
+  const currentFrameRef = useRef(currentFrame);
+  currentFrameRef.current = currentFrame;
+  const rulerTicksRef = useRef(rulerTicks);
+  rulerTicksRef.current = rulerTicks;
+
+  const findSnapFrame = useCallback(
+    (frame: number, excludeLayerId?: string): number => {
+      // Build targets from refs so this fn doesn't change when layers update
+      const targets: number[] = [currentFrameRef.current];
+      for (const layer of layersRef.current) {
+        if (layer.id === excludeLayerId) continue;
+        targets.push(layer.startFrame);
+        targets.push(layer.startFrame + layer.durationInFrames);
+      }
+      for (const tick of rulerTicksRef.current) {
+        targets.push(tick);
+      }
+      const unique = [...new Set(targets)];
+
+      let closest = frame;
+      let minDist = Infinity;
+      for (const t of unique) {
+        const dist = Math.abs(frame - t);
+        if (dist < minDist && dist <= SNAP_THRESHOLD_FRAMES) {
+          minDist = dist;
+          closest = t;
+        }
+      }
+      setSnapFrame(closest !== frame ? closest : null);
+      return closest;
+    },
+    [] // stable — reads from refs
+  );
+
   // ── Global mouse events ────────────────────────────────────────────────────
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!scrollContainerRef.current) return;
-      const trackWidth = getTrackWidth();
 
       if (isDraggingPlayhead) {
         isDraggingRef.current = true;
         const frame = getFrameFromClientX(e.clientX);
-        onSeek(Math.min(frame, durationInFrames));
+        onSeek(Math.max(0, Math.min(frame, durationInFrames)));
         return;
       }
 
       if (dragState) {
         isDraggingRef.current = true;
+        const trackWidth = dragState.initialTrackWidth;
         const deltaX = e.clientX - dragState.startX;
         const deltaFrames = Math.round((deltaX / trackWidth) * durationInFrames);
-        const newStartFrame = Math.max(0, dragState.initialStartFrame + deltaFrames);
-        updateLayerTiming(
-          dragState.layerId,
-          newStartFrame,
-          layers.find((l) => l.id === dragState.layerId)?.durationInFrames || 0
-        );
+        // Read duration from ref to always get latest
+        const currentLayers = layersRef.current;
+        const layerDuration = currentLayers.find((l) => l.id === dragState.layerId)?.durationInFrames || 0;
+        let newStartFrame = Math.max(0, dragState.initialStartFrame + deltaFrames);
+        // Upper-bound clamp: clip can't start past the end of the composition
+        newStartFrame = Math.min(newStartFrame, Math.max(0, durationInFrames - layerDuration));
+        // Snap start edge
+        const snappedStart = findSnapFrame(newStartFrame, dragState.layerId);
+        // Also try snapping end edge
+        const endFrame = newStartFrame + layerDuration;
+        const snappedEnd = findSnapFrame(endFrame, dragState.layerId);
+        if (snappedEnd !== endFrame) {
+          const adjustedStart = snappedEnd - layerDuration;
+          if (adjustedStart >= 0) {
+            updateLayerTiming(dragState.layerId, adjustedStart, layerDuration);
+            return;
+          }
+        }
+        updateLayerTiming(dragState.layerId, snappedStart, layerDuration);
         return;
       }
 
       if (resizeState) {
         isDraggingRef.current = true;
+        const trackWidth = resizeState.initialTrackWidth;
         const deltaX = e.clientX - resizeState.startX;
         const deltaFrames = Math.round((deltaX / trackWidth) * durationInFrames);
         if (resizeState.handle === 'left') {
           const newStart = Math.max(0, resizeState.initialStartFrame + deltaFrames);
           const maxStart = resizeState.initialStartFrame + resizeState.initialDuration - 1;
           const clamped = Math.min(newStart, maxStart);
+          const snapped = findSnapFrame(clamped, resizeState.layerId);
+          // Only accept snap if it's close to intended position
+          const finalStart = Math.abs(snapped - clamped) <= SNAP_THRESHOLD_FRAMES ? snapped : clamped;
           const newDuration =
-            resizeState.initialStartFrame + resizeState.initialDuration - clamped;
-          updateLayerTiming(resizeState.layerId, clamped, newDuration);
+            resizeState.initialStartFrame + resizeState.initialDuration - finalStart;
+          updateLayerTiming(resizeState.layerId, finalStart, Math.max(1, newDuration));
         } else {
           const newDuration = Math.max(1, resizeState.initialDuration + deltaFrames);
-          updateLayerTiming(resizeState.layerId, resizeState.initialStartFrame, newDuration);
+          const endFrame = resizeState.initialStartFrame + newDuration;
+          const snappedEnd = findSnapFrame(endFrame, resizeState.layerId);
+          const adjustedDuration = snappedEnd - resizeState.initialStartFrame;
+          // Only accept snap if it doesn't collapse the clip (snap must be near intended end, not near start)
+          const finalDuration = adjustedDuration >= 1 && Math.abs(adjustedDuration - newDuration) <= SNAP_THRESHOLD_FRAMES
+            ? adjustedDuration
+            : newDuration;
+          updateLayerTiming(
+            resizeState.layerId,
+            resizeState.initialStartFrame,
+            Math.max(1, finalDuration)
+          );
         }
       }
     };
@@ -342,6 +441,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       setDragState(null);
       setResizeState(null);
       setIsDraggingPlayhead(false);
+      setSnapFrame(null);
     };
 
     const handleClickOutside = () => hideContextMenu();
@@ -366,13 +466,168 @@ export const Timeline: React.FC<TimelineProps> = ({
     resizeState,
     contextMenu.visible,
     durationInFrames,
-    zoom,
     getFrameFromClientX,
-    getTrackWidth,
     onSeek,
     updateLayerTiming,
-    layers,
+    findSnapFrame,
   ]);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+
+      switch (e.key) {
+        case ' ': // Space — Play / Pause
+          e.preventDefault();
+          setIsPlaying(!isPlaying);
+          break;
+
+        case 'Delete':
+        case 'Backspace': // Delete selected layer
+          if (!mod) {
+            e.preventDefault();
+            handleDelete();
+          }
+          break;
+
+        case 's': // S — Split at playhead
+          if (!mod) {
+            e.preventDefault();
+            handleCut();
+          }
+          break;
+
+        case 'c': // Ctrl/⌘+C — Copy
+          if (mod) {
+            e.preventDefault();
+            handleCopy();
+          }
+          break;
+
+        case 'v': // Ctrl/⌘+V — Paste
+          if (mod) {
+            e.preventDefault();
+            handlePaste();
+          }
+          break;
+
+        case 'x': // Ctrl/⌘+X — Cut (copy then delete)
+          if (mod) {
+            e.preventDefault();
+            handleCopy();
+            handleDelete();
+          }
+          break;
+
+        case 'd': // Ctrl/⌘+D — Duplicate
+          if (mod) {
+            e.preventDefault();
+            handleDuplicate();
+          }
+          break;
+
+        case 'ArrowLeft': // ← — step 1 frame; Shift+← — step 1 second
+          e.preventDefault();
+          {
+            const step = e.shiftKey ? fps : 1;
+            const newFrame = Math.max(0, currentFrame - step);
+            onSeek(newFrame);
+          }
+          break;
+
+        case 'ArrowRight': // → — step 1 frame; Shift+→ — step 1 second
+          e.preventDefault();
+          {
+            const step = e.shiftKey ? fps : 1;
+            const newFrame = Math.min(durationInFrames, currentFrame + step);
+            onSeek(newFrame);
+          }
+          break;
+
+        case 'Home': // Home — go to start
+          e.preventDefault();
+          onSeek(0);
+          break;
+
+        case 'End': // End — go to end
+          e.preventDefault();
+          onSeek(durationInFrames);
+          break;
+
+        case '=':
+        case '+': // Zoom in
+          if (!mod) {
+            e.preventDefault();
+            setZoom((z) => Math.min(4, parseFloat((z + 0.25).toFixed(2))));
+          }
+          break;
+
+        case '-': // Zoom out
+          if (!mod) {
+            e.preventDefault();
+            setZoom((z) => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))));
+          }
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isPlaying, setIsPlaying, selectedLayerId, currentFrame, fps, durationInFrames,
+    handleCut, handleCopy, handlePaste, handleDelete, handleDuplicate, onSeek,
+  ]);
+
+  // ── Scroll sync: keep header & track rows in vertical lock-step ─────────
+  useEffect(() => {
+    const scrollEl = scrollContainerRef.current;
+    const headerEl = headerScrollRef.current;
+    if (!scrollEl || !headerEl) return;
+
+    const onTrackScroll = () => {
+      headerEl.scrollTop = scrollEl.scrollTop;
+    };
+    const onHeaderScroll = () => {
+      scrollEl.scrollTop = headerEl.scrollTop;
+    };
+
+    scrollEl.addEventListener('scroll', onTrackScroll);
+    headerEl.addEventListener('scroll', onHeaderScroll);
+    return () => {
+      scrollEl.removeEventListener('scroll', onTrackScroll);
+      headerEl.removeEventListener('scroll', onHeaderScroll);
+    };
+  }, []);
+
+  // ── Playhead auto-scroll during playback ────────────────────────────────
+  useEffect(() => {
+    if (!isPlaying || !scrollContainerRef.current) return;
+    const el = scrollContainerRef.current;
+    const trackWidth = el.scrollWidth;
+    const playheadX = (currentFrame / durationInFrames) * trackWidth;
+    const visibleLeft = el.scrollLeft;
+    const visibleRight = el.scrollLeft + el.clientWidth;
+
+    // If playhead exits the visible area, scroll to center it
+    if (playheadX < visibleLeft + 40 || playheadX > visibleRight - 40) {
+      el.scrollTo({
+        left: playheadX - el.clientWidth / 2,
+        behavior: 'smooth',
+      });
+    }
+  }, [currentFrame, isPlaying, durationInFrames]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const formatTime = (frame: number) => {
@@ -392,24 +647,7 @@ export const Timeline: React.FC<TimelineProps> = ({
     return <Film className="w-3 h-3" />;
   };
 
-  // ── Ruler ticks ────────────────────────────────────────────────────────────
-  const rulerTicks = useMemo(() => {
-    const ticks = [];
-    const totalFrames = durationInFrames;
-    // Pick a tick interval so we get ~15-25 major ticks
-    const secondsTotal = totalFrames / fps;
-    let tickEverySeconds = 1;
-    const candidates = [0.5, 1, 2, 5, 10, 15, 30, 60];
-    for (const c of candidates) {
-      tickEverySeconds = c;
-      if (secondsTotal / c <= 24 * zoom) break;
-    }
-    const tickEveryFrames = tickEverySeconds * fps;
-    for (let f = 0; f <= totalFrames; f += tickEveryFrames) {
-      ticks.push(f);
-    }
-    return ticks;
-  }, [durationInFrames, fps, zoom]);
+
 
   if (!currentProject) return null;
 
@@ -433,10 +671,10 @@ export const Timeline: React.FC<TimelineProps> = ({
       >
         <div className="flex items-center gap-0.5">
           {[
-            { icon: <Scissors className="w-3.5 h-3.5" />, action: () => handleCut(), disabled: !selectedLayerId, title: 'Split at playhead' },
-            { icon: <Copy className="w-3.5 h-3.5" />, action: () => handleCopy(), disabled: !selectedLayerId, title: 'Copy' },
-            { icon: <Clipboard className="w-3.5 h-3.5" />, action: handlePaste, disabled: !clipboardLayer, title: 'Paste' },
-            { icon: <Trash2 className="w-3.5 h-3.5" />, action: () => handleDelete(), disabled: !selectedLayerId, title: 'Delete' },
+            { icon: <Scissors className="w-3.5 h-3.5" />, action: () => handleCut(), disabled: !selectedLayerId, title: 'Split at playhead (S)' },
+            { icon: <Copy className="w-3.5 h-3.5" />, action: () => handleCopy(), disabled: !selectedLayerId, title: 'Copy (⌘C)' },
+            { icon: <Clipboard className="w-3.5 h-3.5" />, action: handlePaste, disabled: !clipboardLayer, title: 'Paste (⌘V)' },
+            { icon: <Trash2 className="w-3.5 h-3.5" />, action: () => handleDelete(), disabled: !selectedLayerId, title: 'Delete (Del)' },
           ].map((btn, i) => (
             <button
               key={i}
@@ -459,8 +697,8 @@ export const Timeline: React.FC<TimelineProps> = ({
           <div className="w-px h-4 mx-1" style={{ background: '#3f3f46' }} />
 
           {[
-            { icon: <Eye className="w-3.5 h-3.5" />, action: () => handleToggleVisibility(), disabled: !selectedLayerId, title: 'Toggle visibility' },
-            { icon: <Lock className="w-3.5 h-3.5" />, action: () => handleToggleLock(), disabled: !selectedLayerId, title: 'Toggle lock' },
+            { icon: <Eye className="w-3.5 h-3.5" />, action: () => handleToggleVisibility(), disabled: !selectedLayerId, title: 'Toggle visibility (H)' },
+            { icon: <Lock className="w-3.5 h-3.5" />, action: () => handleToggleLock(), disabled: !selectedLayerId, title: 'Toggle lock (L)' },
           ].map((btn, i) => (
             <button
               key={i}
@@ -494,7 +732,7 @@ export const Timeline: React.FC<TimelineProps> = ({
             style={{ color: '#71717a' }}
             onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = '#27272a')}
             onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
-            title="Zoom out"
+            title="Zoom out (-)"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -507,7 +745,7 @@ export const Timeline: React.FC<TimelineProps> = ({
             style={{ color: '#71717a' }}
             onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = '#27272a')}
             onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
-            title="Zoom in"
+            title="Zoom in (+)"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -518,6 +756,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       <div className="flex flex-1 overflow-hidden">
         {/* Layer headers (fixed, left panel) */}
         <div
+          ref={headerScrollRef}
           className="flex-shrink-0 flex flex-col overflow-y-auto overflow-x-hidden"
           style={{
             width: HEADER_WIDTH,
@@ -823,6 +1062,23 @@ export const Timeline: React.FC<TimelineProps> = ({
                   </div>
                 );
               })}
+
+              {/* ── Snap guide line (CapCut-style yellow) ── */}
+              {snapFrame !== null && (
+                <div
+                  className="absolute top-0"
+                  style={{
+                    bottom: 0,
+                    left: `${getXPctFromFrame(snapFrame)}%`,
+                    width: 1,
+                    background: '#facc15',
+                    zIndex: 48,
+                    pointerEvents: 'none',
+                    transform: 'translateX(-0.5px)',
+                    boxShadow: '0 0 6px rgba(250,204,21,0.6)',
+                  }}
+                />
+              )}
 
               {/* ── Playhead vertical line spanning all tracks ── */}
               <div

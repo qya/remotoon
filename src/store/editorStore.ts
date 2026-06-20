@@ -599,13 +599,15 @@ export const useEditorStore = create<EditorState>()(
         set((state) => {
           if (!state.currentProject) return state;
 
-          const updatedLayers = state.currentProject.layers.filter((l) => l.id !== layerId);
-          updatedLayers.forEach((layer, idx) => { layer.layerIndex = idx; });
+          const updatedLayers = state.currentProject.layers
+            .filter((l) => l.id !== layerId)
+            .map((layer, idx) => ({ ...layer, layerIndex: idx }));
 
           const updatedScenes = state.currentProject.scenes.map((s) => {
             if (s.id !== currentSceneId) return s;
-            const sceneLayers = s.layers.filter((l) => l.id !== layerId);
-            sceneLayers.forEach((layer, idx) => { layer.layerIndex = idx; });
+            const sceneLayers = s.layers
+              .filter((l) => l.id !== layerId)
+              .map((layer, idx) => ({ ...layer, layerIndex: idx }));
             return { ...s, layers: sceneLayers };
           });
 
@@ -645,7 +647,7 @@ export const useEditorStore = create<EditorState>()(
 
           const [movedLayer] = layers.splice(layerIndex, 1);
           layers.splice(newLayerIndex, 0, movedLayer);
-          layers.forEach((layer, idx) => { layer.layerIndex = idx; });
+          const reindexedLayers = layers.map((layer, idx) => ({ ...layer, layerIndex: idx }));
 
           // Also reorder in current scene
           const updatedScenes = state.currentProject.scenes.map((s) => {
@@ -655,14 +657,14 @@ export const useEditorStore = create<EditorState>()(
             if (sceneLayerIndex === -1) return s;
             const [movedSceneLayer] = sceneLayers.splice(sceneLayerIndex, 1);
             sceneLayers.splice(newLayerIndex, 0, movedSceneLayer);
-            sceneLayers.forEach((layer, idx) => { layer.layerIndex = idx; });
-            return { ...s, layers: sceneLayers };
+            const reindexedSceneLayers = sceneLayers.map((layer, idx) => ({ ...layer, layerIndex: idx }));
+            return { ...s, layers: reindexedSceneLayers };
           });
 
           const updatedProject = {
             ...state.currentProject,
             scenes: updatedScenes,
-            layers,
+            layers: reindexedLayers,
             updatedAt: Date.now(),
           };
 
@@ -827,7 +829,7 @@ export const useEditorStore = create<EditorState>()(
       setCurrentFrame: (frame: number) => set({ currentFrame: frame }),
 
       seekTo: (frame: number) => {
-        set({ currentFrame: frame, isPlaying: false });
+        set({ currentFrame: frame });
       },
 
       setActiveLeftPanel: (panel: 'media' | 'project') => set({ activeLeftPanel: panel }),
