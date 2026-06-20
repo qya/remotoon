@@ -31,6 +31,7 @@ import { flip } from '@remotion/transitions/flip';
 import { slide } from '@remotion/transitions/slide';
 import { wipe } from '@remotion/transitions/wipe';
 import * as THREE from 'three';
+import { AnimatedEmoji } from '@remotion/animated-emoji';
 
 const PROPS_REGEX = /\$PROPS\.([A-Za-z_][A-Za-z0-9_]*)/g;
 const IMPORT_REGEXES: RegExp[] = [
@@ -230,6 +231,8 @@ export class JITCompiler {
       clockWipe,
       // three.js
       THREE,
+      // @remotion/animated-emoji
+      AnimatedEmoji,
     };
   }
 

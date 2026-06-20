@@ -12,6 +12,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@react-three/fiber": "^9.5.0",
+    "@remotion/animated-emoji": "^4.0.431",
     "@remotion/cli": "4.0.431",
     "@remotion/lottie": "4.0.431",
     "@remotion/player": "4.0.431",
