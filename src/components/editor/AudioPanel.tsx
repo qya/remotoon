@@ -1,62 +1,137 @@
-import { Headphones, Music, Mic, Volume2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Headphones, Play, Pause, Plus } from 'lucide-react';
+import { useEditorStore } from '../../store/editorStore';
+import {
+  whip,
+  whoosh,
+  pageTurn,
+  uiSwitch,
+  mouseClick,
+  shutterModern,
+  shutterOld
+} from '@remotion/sfx';
+
+// Metadata for built-in @remotion/sfx effects
+const BUILTIN_SFX = [
+  { id: 'whip', name: 'Whip Whoosh', src: whip, duration: 1.0, description: 'Sharp fast whip sound effect' },
+  { id: 'whoosh', name: 'Soft Whoosh', src: whoosh, duration: 1.5, description: 'Smooth atmospheric transition whoosh' },
+  { id: 'pageTurn', name: 'Page Turn', src: pageTurn, duration: 1.2, description: 'Paper page flipping sound' },
+  { id: 'uiSwitch', name: 'UI Switch Toggle', src: uiSwitch, duration: 0.5, description: 'Mechanical toggle button click' },
+  { id: 'mouseClick', name: 'Mouse Click', src: mouseClick, duration: 0.3, description: 'Standard computer mouse click' },
+  { id: 'shutterModern', name: 'Modern Shutter', src: shutterModern, duration: 0.8, description: 'Modern DSLR camera shutter click' },
+  { id: 'shutterOld', name: 'Classic Shutter', src: shutterOld, duration: 1.0, description: 'Retro analog camera click and wind' },
+];
 
 export const AudioPanel: React.FC = () => {
+  const currentProject = useEditorStore((state) => state.currentProject);
+  const currentFrame = useEditorStore((state) => state.currentFrame);
+  const addRemoteMedia = useEditorStore((state) => state.addRemoteMedia);
+  const addMediaLayer = useEditorStore((state) => state.addMediaLayer);
+
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Play/Pause sound effect preview
+  const handlePlayToggle = (id: string, src: string) => {
+    if (playingId === id) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setPlayingId(null);
+    } else {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      const audio = new window.Audio(src);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setPlayingId(null);
+      };
+      audio.play().catch((err) => {
+        console.error('Error playing audio preview:', err);
+      });
+      setPlayingId(id);
+    }
+  };
+
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
+
+  const handleAddSfx = (name: string, src: string, duration: number) => {
+    if (!currentProject) {
+      alert('Please create or open a project first.');
+      return;
+    }
+    // Add remote media item to the project
+    const mediaItem = addRemoteMedia(name, src, 'audio', duration);
+    // Add media item as layer at current frame
+    addMediaLayer(mediaItem.id, currentFrame);
+  };
+
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a] text-gray-200">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#333]">
-        <Headphones className="w-4 h-4 text-purple-400" />
-        <span className="text-sm font-medium">Audio</span>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[#333]">
+        <div className="flex items-center gap-2">
+          <Headphones className="w-4 h-4 text-purple-400" />
+          <span className="text-sm font-medium">Audio Panel</span>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden select-none">
-        {/* Background glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+      {/* Subheader */}
+      <div className="px-3 py-2 border-b border-[#333] bg-[#161616]">
+        <span className="text-xs font-semibold text-purple-400">Sound Effects (SFX)</span>
+      </div>
 
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="w-14 h-14 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(168,85,247,0.15)] animate-pulse">
-            <Headphones className="w-7 h-7 text-purple-400" />
-          </div>
-
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-purple-500/10 text-purple-400 border border-purple-500/20 mb-2">
-            Coming Soon
-          </span>
-
-          <h3 className="text-sm font-semibold text-white mb-1">Advanced Audio Control</h3>
-          <p className="text-xs text-gray-400 max-w-[200px] leading-relaxed mb-6">
-            Add background music tracks, sound effects, and voiceovers to elevate your story.
+      {/* SFX List Content */}
+      <div className="flex-1 overflow-y-auto p-3">
+        <div className="space-y-2">
+          <p className="text-[10px] text-gray-500 mb-2 leading-relaxed">
+            Normalized volume peak at -3dB. Royalty free, no attribution required.
           </p>
-        </div>
-
-        {/* Feature Mockups */}
-        <div className="w-full space-y-2 relative z-10 opacity-40">
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Music className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-16 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-24" />
+          {BUILTIN_SFX.map((sfx) => (
+            <div
+              key={sfx.id}
+              className="group flex items-center justify-between p-2 rounded bg-[#222] border border-[#333] hover:border-purple-500/30 hover:bg-[#272727] transition-all duration-200"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => handlePlayToggle(sfx.id, sfx.src)}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+                    playingId === sfx.id
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-[#333] hover:bg-[#444] text-gray-300'
+                  }`}
+                >
+                  {playingId === sfx.id ? (
+                    <Pause className="w-3.5 h-3.5" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 ml-0.5" />
+                  )}
+                </button>
+                <div className="text-left min-w-0">
+                  <p className="text-xs font-medium text-gray-200 truncate">{sfx.name}</p>
+                  <p className="text-[9px] text-gray-500 truncate max-w-[170px]">{sfx.description}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-[9px] text-gray-500 font-mono">{sfx.duration}s</span>
+                <button
+                  onClick={() => handleAddSfx(sfx.name, sfx.src, sfx.duration)}
+                  className="p-1 rounded bg-[#333] hover:bg-purple-600 hover:text-white transition-colors"
+                  title="Add to Timeline"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-            <span className="text-[10px] text-gray-500">Music</span>
-          </div>
-
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Mic className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-20 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-12" />
-            </div>
-            <span className="text-[10px] text-gray-500">Voiceover</span>
-          </div>
-
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Volume2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-12 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-28" />
-            </div>
-            <span className="text-[10px] text-gray-500">Effects</span>
-          </div>
+          ))}
         </div>
       </div>
     </div>

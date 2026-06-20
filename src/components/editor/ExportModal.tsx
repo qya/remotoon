@@ -9,8 +9,7 @@ import {
   Sliders,
   Film,
   Clock,
-  ChevronRight,
-  Sparkles
+  ChevronRight
 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { Thumbnail } from '@remotion/player';

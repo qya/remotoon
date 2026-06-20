@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig, Video, Img } from 'remotion';
+import { AbsoluteFill, useCurrentFrame, useVideoConfig, Video, Img, Audio } from 'remotion';
 import type { Layer, MediaItem } from '../../types';
 
 interface LayerRendererProps {
@@ -71,6 +71,15 @@ export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) =>
                 width: '100%',
                 height: '100%',
                 objectFit: 'contain',
+              }}
+            />
+          );
+        } else if (media.type === 'audio') {
+          return (
+            <Audio
+              src={media.src}
+              style={{
+                display: 'none',
               }}
             />
           );

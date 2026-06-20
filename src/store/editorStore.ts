@@ -34,6 +34,7 @@ interface EditorState {
 
   // Media actions
   importMedia: (file: File) => Promise<MediaItem>;
+  addRemoteMedia: (name: string, src: string, type: MediaType, duration?: number) => MediaItem;
   deleteMedia: (mediaId: string) => void;
 
   // Layer actions
@@ -339,6 +340,35 @@ export const useEditorStore = create<EditorState>()(
             img.src = url;
           }
         });
+      },
+
+      addRemoteMedia: (name: string, src: string, type: MediaType, duration = 2.0) => {
+        const mediaId = nanoid();
+        const mediaItem: MediaItem = {
+          id: mediaId,
+          name,
+          type,
+          src,
+          duration,
+          createdAt: Date.now(),
+        };
+
+        set((state) => {
+          if (!state.currentProject) return state;
+          const updatedProject = {
+            ...state.currentProject,
+            media: [...state.currentProject.media, mediaItem],
+            updatedAt: Date.now(),
+          };
+          return {
+            currentProject: updatedProject,
+            projects: state.projects.map((p) =>
+              p.id === updatedProject.id ? updatedProject : p
+            ),
+          };
+        });
+
+        return mediaItem;
       },
 
       deleteMedia: (mediaId: string) => {

@@ -15,6 +15,7 @@
     "@remotion/cli": "4.0.431",
     "@remotion/lottie": "4.0.431",
     "@remotion/player": "4.0.431",
+    "@remotion/sfx": "^4.0.431",
     "@remotion/shapes": "4.0.431",
     "@remotion/three": "4.0.431",
     "@remotion/transitions": "4.0.431",
