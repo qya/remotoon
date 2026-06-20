@@ -6,3 +6,5 @@ export { CodeEditor } from './CodeEditor';
 export { ProjectManager } from './ProjectManager';
 export { TemplateSelector } from './TemplateSelector';
 export { SceneManager } from './SceneManager';
+export { ExportModal } from './ExportModal';
+

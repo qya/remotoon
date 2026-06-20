@@ -138,6 +138,7 @@ export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) =>
 
   return (
     <AbsoluteFill
+      data-layer-id={layer.id}
       style={{
         ...transformStyle,
         pointerEvents: 'none',

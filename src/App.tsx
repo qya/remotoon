@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, useParams, Navigate } from 'react-router-dom';
 import { useEditorStore } from './store/editorStore';
-import { LeftSidebar, RightSidebar, ComponentLibraryModal, SceneManager } from './components/editor';
+import { LeftSidebar, RightSidebar, ComponentLibraryModal, SceneManager, ExportModal } from './components/editor';
 import { PreviewPlayer } from './components/preview';
 import { Projects } from './pages/Projects';
 import { Landing } from './pages/Landing';
@@ -37,6 +37,7 @@ function Editor() {
 
   const [showComponentLibrary, setShowComponentLibrary] = React.useState(false);
   const [showSceneManager, setShowSceneManager] = React.useState(false);
+  const [showExportModal, setShowExportModal] = React.useState(false);
   const [isEditingName, setIsEditingName] = React.useState(false);
   const [editName, setEditName] = React.useState('');
 
@@ -139,6 +140,7 @@ function Editor() {
 
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setShowExportModal(true)}
             className="flex items-center gap-2 px-4 py-1.5 bg-[#00a8e8] hover:bg-[#0086b6] rounded-md text-white text-sm font-medium transition-colors"
           >
             <Video className="w-4 h-4" />
@@ -235,6 +237,14 @@ function Editor() {
       {showComponentLibrary && (
         <ComponentLibraryModal
           onClose={() => setShowComponentLibrary(false)}
+        />
+      )}
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <ExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
         />
       )}
     </div>
