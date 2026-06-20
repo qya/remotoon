@@ -26,7 +26,7 @@ interface EditorState {
   activeLeftTool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters';
 
   // Actions
-  createProject: (name: string, templateId: string) => Project;
+  createProject: (name: string, templateId: string, durationInFrames?: number) => Project;
   loadProject: (projectId: string) => void;
   deleteProject: (projectId: string) => void;
   updateProjectName: (name: string) => void;
@@ -153,22 +153,27 @@ export const useEditorStore = create<EditorState>()(
         return { ...comp, compiledComponent: result.success ? result.component : null };
       }),
 
-      createProject: (name: string, templateId: string) => {
+      createProject: (name: string, templateId: string, durationInFrames?: number) => {
         const template = getTemplateById(templateId);
         if (!template) throw new Error(`Template ${templateId} not found`);
+
+        const finalDurationInFrames = durationInFrames ?? template.durationInFrames;
 
         const defaultScene: Scene = {
           id: nanoid(),
           name: 'Scene 1',
           layers: [],
-          durationInFrames: template.durationInFrames,
+          durationInFrames: finalDurationInFrames,
           order: 0,
         };
 
         const project: Project = {
           id: nanoid(),
           name,
-          template,
+          template: {
+            ...template,
+            durationInFrames: finalDurationInFrames,
+          },
           media: [],
           scenes: [defaultScene],
           currentSceneId: defaultScene.id,

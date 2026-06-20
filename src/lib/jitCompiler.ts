@@ -242,14 +242,6 @@ export class JITCompiler {
 
       const sanitizedCode = stripMarkdownFences(code);
       
-      // Auto-detect template style: export const X = () => {...}
-      // This pattern is common in template examples
-      const isTemplateStyle = /export\s+const\s+\w+\s*=\s*\(\s*\)\s*=>/.test(sanitizedCode);
-      
-      if (isTemplateStyle) {
-        return this.compileTemplateStyle(sanitizedCode);
-      }
-
       const withoutImports = stripImports(sanitizedCode);
       const withoutReactDestructuring = stripReactDestructuring(withoutImports);
       const withoutExports = stripExports(withoutReactDestructuring);

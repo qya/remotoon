@@ -405,7 +405,7 @@ const ComponentCard: React.FC<{
 }> = ({ component, onClick, onDuplicate, onDelete, menuOpen, setMenuOpen }) => {
   // Store compiled component locally since it can't be serialized to localStorage
   const [compiledComponent, setCompiledComponent] = useState<React.ComponentType<any> | null>(
-    component.compiledComponent ?? null
+    () => component.compiledComponent ?? null
   );
   const [isLoading, setIsLoading] = useState(!component.compiledComponent);
   const [compileError, setCompileError] = useState(false);

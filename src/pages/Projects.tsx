@@ -38,8 +38,8 @@ export const Projects: React.FC = () => {
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleCreateProject = (templateId: string, projectName: string) => {
-    const project = createProject(projectName, templateId);
+  const handleCreateProject = (templateId: string, projectName: string, durationInFrames: number) => {
+    const project = createProject(projectName, templateId, durationInFrames);
     setShowTemplateSelector(false);
     navigate(`/editor/${project.id}`);
   };

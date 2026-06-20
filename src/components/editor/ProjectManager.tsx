@@ -12,8 +12,8 @@ export const ProjectManager: React.FC = () => {
   
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
 
-  const handleCreateProject = (templateId: string, projectName: string) => {
-    createProject(projectName, templateId);
+  const handleCreateProject = (templateId: string, projectName: string, durationInFrames: number) => {
+    createProject(projectName, templateId, durationInFrames);
     setShowTemplateSelector(false);
   };
 
