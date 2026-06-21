@@ -5,7 +5,7 @@
     </td>
     <td align="right">
       <h1>Remotoon</h1>
-      <h3 style="margin-top: -10px;">A premium, powerful Just-in-Time (JIT) Component Studio for creating dynamic videos with [Remotion](https://www.remotion.dev/).</h3>
+      <h3 style="margin-top: -10px;">A free and open source programatically video editor based on webapp</h3>
     </td>
   </tr>
 </table>
@@ -148,6 +148,7 @@ npm run preview
 
 ## 📄 License
 
+MIT - see [LICENSE](LICENSE).
 
 ## 🙏 Credits
 
