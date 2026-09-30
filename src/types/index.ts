@@ -4,6 +4,17 @@ export type AspectRatio = 'portrait' | 'landscape' | 'square';
 
 export type MediaType = 'video' | 'image' | 'audio';
 
+export type LeftTool =
+  | 'ai'
+  | 'assets'
+  | 'components'
+  | 'audio'
+  | 'text'
+  | 'stickers'
+  | 'effects'
+  | 'transitions'
+  | 'filters';
+
 export interface MediaItem {
   id: string;
   name: string;

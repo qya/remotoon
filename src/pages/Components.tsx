@@ -26,8 +26,8 @@ import {
   Pause,
   Tag,
   Settings,
-  MessageSquare,
-  Send,
+  Undo2,
+  Redo2,
   PanelLeftClose,
   PanelLeftOpen,
   MoreVertical,
@@ -36,6 +36,22 @@ import {
 } from 'lucide-react';
 import { AppSidebar } from '../components/AppSidebar';
 import { MetaTags } from '../components/MetaTags';
+import { AIChatView, ChatActionButton } from '../components/ai/AIChatView';
+import { useAIStore, abortGeneration, threadKeyForLibrary, type AIMessage } from '../lib/ai/aiStore';
+import { runAIRequest } from '../lib/ai/runner';
+import { suggestLayerName } from '../lib/ai/prompt';
+import { configureMonaco } from '../lib/monacoSetup';
+
+const EMPTY_MESSAGES: AIMessage[] = [];
+
+// Shown by the Remotion Player if a component crashes while rendering.
+const PlayerErrorFallback = ({ error }: { error: Error }) => (
+  <div className="w-full h-full flex flex-col items-center justify-center bg-[#140a0a] text-center p-6">
+    <AlertCircle className="w-10 h-10 text-red-400 mb-2" />
+    <p className="text-red-300 text-sm font-medium">Runtime error</p>
+    <p className="text-red-300/70 text-xs font-mono mt-1 max-w-md break-words">{error.message}</p>
+  </div>
+);
 
 type Category = 'all' | 'animation' | 'effect' | 'overlay' | 'text' | 'shape';
 type ViewMode = 'grid' | 'list';
@@ -141,71 +157,22 @@ const PreviewPlaceholder: React.FC<{ error?: boolean }> = ({ error }) => (
   </div>
 );
 
-type ChatMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-};
+const COMPONENT_SUGGESTIONS = [
+  'Neon title with a glitch reveal and glowing underline',
+  'Animated donut chart with 4 segments and a counting percentage',
+  'Logo reveal with light sweep and particles',
+  'Instagram-style story progress bars with a caption',
+  'Liquid gradient blob background, slow and dreamy',
+  'Emoji rain using AnimatedEmoji falling with physics',
+];
 
-const buildCodeFromPrompt = (prompt: string) => {
-  const safePrompt = prompt.trim().replace(/\s+/g, ' ');
-  const title = safePrompt.slice(0, 42) || 'AI Generated';
-  const subtitle = safePrompt.slice(0, 90) || 'Describe the animation you want';
-
-  return `const { useCurrentFrame, interpolate, AbsoluteFill, Easing } = React;
-
-function Component() {
-  const frame = useCurrentFrame();
-
-  const opacity = interpolate(frame, [0, 25], [0, 1], {
-    extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.ease),
-  });
-
-  const moveY = interpolate(frame, [0, 45], [60, 0], {
-    extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.cubic),
-  });
-
-  const pulse = interpolate(frame % 60, [0, 30, 60], [1, 1.03, 1], {
-    extrapolateRight: 'clamp',
-  });
-
-  return (
-    <AbsoluteFill style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      fontFamily: 'Inter, system-ui, sans-serif',
-    }}>
-      <div style={{
-        textAlign: 'center',
-        opacity,
-        transform: \`translateY(\${moveY}px) scale(\${pulse})\`,
-        padding: '0 80px',
-      }}>
-        <h1 style={{
-          margin: 0,
-          color: '#f8fafc',
-          fontSize: 82,
-          lineHeight: 1.1,
-          letterSpacing: '-0.03em',
-        }}>
-          ${title.replace(/`/g, '')}
-        </h1>
-        <p style={{
-          marginTop: 20,
-          color: '#94a3b8',
-          fontSize: 28,
-        }}>
-          ${subtitle.replace(/`/g, '')}
-        </p>
-      </div>
-    </AbsoluteFill>
-  );
-}`;
-};
+const COMPONENT_EDIT_SUGGESTIONS = [
+  'Make it snappier',
+  'Expose all colors and texts as $PROPS',
+  'Add an exit animation',
+  'Use a dark luxury gold palette',
+  'Make the background transparent',
+];
 
 // Components List Page
 export const ComponentsList: React.FC = () => {
@@ -638,9 +605,18 @@ export const ComponentDetail: React.FC = () => {
   const [previewKey, setPreviewKey] = useState(0);
   const [previewComponent, setPreviewComponent] = useState<React.ComponentType<any> | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'split' | 'code'>('split');
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [aiDraft, setAiDraft] = useState('');
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  // Library components get their own AI thread; drafts share the "new" one.
+  const aiThreadKey = threadKeyForLibrary(isNew ? 'new' : id ?? 'new');
+  const aiMessages = useAIStore((s) => s.threads[aiThreadKey]) ?? EMPTY_MESSAGES;
+  const aiGenerating = useAIStore((s) => s.generating);
+  const aiConfigured = useAIStore((s) => s.isConfigured)();
+  useAIStore((s) => s.settings); // re-render when provider settings change
+  const clearAIThread = useAIStore((s) => s.clearThread);
+  const updateAIMessage = useAIStore((s) => s.updateMessage);
+  const setAISettingsOpen = useAIStore((s) => s.setSettingsOpen);
+  const isAIWorkingHere = aiGenerating?.threadKey === aiThreadKey;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const initializedForRef = useRef<string | null>(null);
@@ -692,94 +668,80 @@ export const ComponentDetail: React.FC = () => {
     setCompileSuccess(false);
     setIsPlaying(true);
     setActiveTab('split');
-    setAiPrompt('');
-    setChatMessages([
-      {
-        id: nanoid(),
-        role: 'assistant',
-        content: isNew
-          ? 'Tell me what to create and I will draft starter code for your new component.'
-          : 'Describe edits for this component and I will generate an updated draft.',
-      },
-    ]);
+    setAiDraft('');
     setPreviewKey(prev => prev + 1);
     initializedForRef.current = targetKey;
   }, [isNew, existingComponent]);
 
-  const handleNewChat = useCallback(() => {
-    setAiPrompt('');
-    setChatMessages([
-      {
-        id: nanoid(),
-        role: 'assistant',
-        content: isNew
-          ? 'New chat started. Describe the component you want to create.'
-          : 'New chat started. Describe how you want to edit this component.',
-      },
-    ]);
-  }, [isNew]);
+  // Real AI generation: streams code straight into the Monaco editor, then
+  // compiles (with self-healing retries) and hot-swaps the preview.
+  const codeRef = useRef(code);
+  useEffect(() => {
+    codeRef.current = code;
+  }, [code]);
 
-  const handleGenerateFromPrompt = useCallback(() => {
-    const promptText = aiPrompt.trim();
-    if (!promptText) return;
+  const handleAISend = useCallback(
+    async (promptText: string, display?: string) => {
+      const prevCode = codeRef.current;
+      // The starter template is not worth editing; treat it as a fresh request.
+      const isStarter = isNew && prevCode.trim() === defaultCode.trim();
+      setActiveTab('split');
 
-    setChatMessages((prev) => [
-      ...prev,
-      { id: nanoid(), role: 'user', content: promptText },
-    ]);
-    setAiPrompt('');
-
-    const generatedCode = buildCodeFromPrompt(promptText);
-    setCode(generatedCode);
-    setCompileError(null);
-    setCompileSuccess(false);
-
-    try {
-      const result = jitCompiler.compile(generatedCode);
-      if (result.success && result.component) {
-        setPreviewComponent(() => result.component ?? null);
-        setCompileError(null);
-        setIsPlaying(true);
-        setPreviewKey((prev) => prev + 1);
-        setActiveTab('preview');
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: nanoid(),
-            role: 'assistant',
-            content: 'Generated a draft based on your prompt. Review it in Preview or refine it in Code.',
-          },
-        ]);
-      } else {
-        setPreviewComponent(null);
-        setCompileError(result.error || 'Compilation failed');
-        setActiveTab('code');
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: nanoid(),
-            role: 'assistant',
-            content: 'Draft generated, but it has a compile error. Please review and run Test.',
-          },
-        ]);
-      }
-    } catch (error) {
-      setPreviewComponent(null);
-      setCompileError(String(error));
-      setActiveTab('code');
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: nanoid(),
-          role: 'assistant',
-          content: 'Could not compile this draft. Try a simpler prompt or edit the code manually.',
+      await runAIRequest({
+        threadKey: aiThreadKey,
+        prompt: promptText,
+        displayPrompt: display,
+        currentCode: isStarter ? undefined : prevCode,
+        context: { width: 1920, height: 1080, fps, durationInFrames },
+        onStreamCode: (partial) => {
+          if (partial) setCode(partial);
         },
-      ]);
-    }
-  }, [aiPrompt]);
+        onSuccess: (res) => {
+          setCode(res.code);
+          setPreviewComponent(() => res.component ?? null);
+          setCompileError(null);
+          setIsPlaying(true);
+          setPreviewKey((k) => k + 1);
+          if (isNew && (name === 'New Component' || !name.trim())) {
+            setName(suggestLayerName(res.code, promptText).replace(/^✦\s*/, ''));
+          }
+          return { prevCode };
+        },
+        onFailure: () => {
+          // Keep the last working version in the editor.
+          setCode(prevCode);
+        },
+      });
+    },
+    [aiThreadKey, isNew, name],
+  );
+
+  const renderAIActions = useCallback(
+    (m: AIMessage) => {
+      if (m.status !== 'done' || !m.code) return null;
+      const target = m.reverted ? m.code : m.prevCode;
+      if (target === undefined) return null;
+      return (
+        <ChatActionButton
+          icon={m.reverted ? <Redo2 className="w-3 h-3" /> : <Undo2 className="w-3 h-3" />}
+          disabled={!!aiGenerating}
+          onClick={() => {
+            setCode(target);
+            setPreviewKey((k) => k + 1);
+            updateAIMessage(aiThreadKey, m.id, { reverted: !m.reverted });
+          }}
+        >
+          {m.reverted ? 'Re-apply' : 'Revert'}
+        </ChatActionButton>
+      );
+    },
+    [aiGenerating, aiThreadKey, updateAIMessage],
+  );
 
   // Real-time preview update with debounce
   useEffect(() => {
+    // While the AI streams, partial code never compiles; skip until it's done.
+    if (isAIWorkingHere) return;
     const timeout = setTimeout(() => {
       try {
         const result = jitCompiler.compile(code);
@@ -795,7 +757,7 @@ export const ComponentDetail: React.FC = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeout);
-  }, [code]);
+  }, [code, isAIWorkingHere]);
 
   // Handle test compile (manual trigger)
   const handleTestCompile = useCallback(() => {
@@ -971,21 +933,32 @@ export const ComponentDetail: React.FC = () => {
               >
                 <PanelLeftOpen className="w-4 h-4" />
               </button>
-              <MessageSquare className="w-4 h-4 text-gray-600" />
+              <Sparkles className={`w-4 h-4 ${isAIWorkingHere ? 'text-sky-400 animate-pulse' : 'text-gray-600'}`} />
             </div>
           ) : (
             <div className="h-full flex flex-col">
               <div className="flex items-center justify-between p-3 border-b border-[#333]">
                 <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-[#00a8e8]" />
-                  <span className="text-sm font-medium text-gray-200">AI Chat</span>
+                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#00a8e8] to-purple-500 flex items-center justify-center">
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <span className="text-sm font-medium text-gray-200">AI Studio</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={handleNewChat}
-                    className="px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#252525] rounded transition-colors"
+                    onClick={() => setAISettingsOpen(true)}
+                    className="p-1.5 text-gray-400 hover:text-white hover:bg-[#252525] rounded transition-colors"
+                    title="AI provider settings"
+                    aria-label="AI provider settings"
                   >
-                    New
+                    <Settings className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => clearAIThread(aiThreadKey)}
+                    disabled={isAIWorkingHere}
+                    className="px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[#252525] rounded transition-colors disabled:opacity-40"
+                  >
+                    New chat
                   </button>
                   <button
                     onClick={() => setIsChatCollapsed(true)}
@@ -997,35 +970,42 @@ export const ComponentDetail: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {chatMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`rounded-lg p-3 text-sm ${msg.role === 'user'
-                      ? 'bg-[#00a8e8]/15 text-blue-100 border border-[#00a8e8]/30'
-                      : 'bg-[#202020] text-gray-300 border border-[#333]'
-                      }`}
-                  >
-                    {msg.content}
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-3 border-t border-[#333] space-y-2">
-                <textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder={isNew ? 'Describe the component you want...' : 'Describe what to edit...'}
-                  className="w-full h-24 px-3 py-2 bg-[#202020] border border-[#333] rounded-lg text-sm text-gray-200 resize-none focus:border-[#00a8e8] focus:outline-none"
-                />
-                <button
-                  onClick={handleGenerateFromPrompt}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#00a8e8] hover:bg-[#0086b6] rounded-lg text-white text-sm font-medium transition-colors"
-                >
-                  <Send className="w-4 h-4" />
-                  Generate Draft
-                </button>
-              </div>
+              <AIChatView
+                messages={aiMessages}
+                isGenerating={!!aiGenerating}
+                onSend={(t) => handleAISend(t)}
+                onStop={abortGeneration}
+                suggestions={isNew && aiMessages.length === 0 ? COMPONENT_SUGGESTIONS : COMPONENT_EDIT_SUGGESTIONS}
+                placeholder={isNew ? 'Describe the component you want…' : 'Describe what to change…'}
+                emptyTitle={isNew ? 'Describe it, watch it build' : 'Edit with AI'}
+                emptySubtitle="Code streams into the editor, compiles in your browser and self-heals on errors."
+                renderActions={renderAIActions}
+                draft={aiDraft}
+                onDraftChange={setAiDraft}
+                disabledReason={aiConfigured ? null : 'Connect an AI provider to start →'}
+                footer={
+                  !aiConfigured ? (
+                    <button
+                      onClick={() => setAISettingsOpen(true)}
+                      className="w-full mb-2 py-2 rounded-lg bg-gradient-to-r from-[#00a8e8] to-purple-500 text-white text-xs font-semibold hover:opacity-90"
+                    >
+                      Connect an AI provider
+                    </button>
+                  ) : compileError && !isAIWorkingHere ? (
+                    <button
+                      onClick={() =>
+                        handleAISend(
+                          `The current code fails to compile in the Remotoon sandbox with this error:\n\n${compileError}\n\nFix it.`,
+                          '🔧 Fix the compile error',
+                        )
+                      }
+                      className="w-full mb-2 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-medium hover:bg-red-500/25"
+                    >
+                      Fix compile error with AI
+                    </button>
+                  ) : null
+                }
+              />
             </div>
           )}
         </aside>
@@ -1087,6 +1067,7 @@ export const ComponentDetail: React.FC = () => {
                   {previewComponent ? (
                     <Player
                       key={previewKey}
+                      errorFallback={PlayerErrorFallback}
                       component={previewComponent}
                       durationInFrames={durationInFrames}
                       fps={fps}
@@ -1135,7 +1116,7 @@ export const ComponentDetail: React.FC = () => {
                     lineNumbers: 'on',
                     roundedSelection: false,
                     scrollBeyondLastLine: false,
-                    readOnly: false,
+                    readOnly: isAIWorkingHere,
                     automaticLayout: true,
                     tabSize: 2,
                     insertSpaces: true,
@@ -1150,51 +1131,7 @@ export const ComponentDetail: React.FC = () => {
                     renderLineHighlight: 'all',
                     theme: 'vs-dark',
                   }}
-                  beforeMount={(monaco: any) => {
-                    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-                      jsx: monaco.languages.typescript.JsxEmit.React,
-                      jsxFactory: 'React.createElement',
-                      reactNamespace: 'React',
-                      allowNonTsExtensions: true,
-                      allowJs: true,
-                      target: monaco.languages.typescript.ScriptTarget.Latest,
-                      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-                      module: monaco.languages.typescript.ModuleKind.CommonJS,
-                      noEmit: true,
-                      esModuleInterop: true,
-                      skipLibCheck: true,
-                    });
-
-                    monaco.languages.typescript.typescriptDefaults.addExtraLib(
-                      `
-                      declare module 'remotion' {
-                        export function useCurrentFrame(): number;
-                        export function useVideoConfig(): { fps: number; durationInFrames: number; width: number; height: number };
-                        export function interpolate(input: number, inputRange: number[], outputRange: number[], options?: any): number;
-                        export function spring(options: any): number;
-                        export const AbsoluteFill: React.FC<any>;
-                        export const Sequence: React.FC<any>;
-                        export const Video: React.FC<any>;
-                        export const Img: React.FC<any>;
-                        export const Audio: React.FC<any>;
-                        export const Easing: {
-                          linear: (t: number) => number;
-                          in: (easing: (t: number) => number) => (t: number) => number;
-                          out: (easing: (t: number) => number) => (t: number) => number;
-                          inOut: (easing: (t: number) => number) => (t: number) => number;
-                          ease: (t: number) => number;
-                          back: (overshoot?: number) => (t: number) => number;
-                          bounce: (t: number) => number;
-                          elastic: (amplitude?: number, period?: number) => (t: number) => number;
-                        };
-                      }
-                      
-                      declare const $PROPS: Record<string, any>;
-                      declare const React: typeof import('react');
-                      `,
-                      'remotion.d.ts'
-                    );
-                  }}
+                  beforeMount={configureMonaco}
                   theme="vs-dark"
                   loading={
                     <div className="h-full flex items-center justify-center text-gray-500">
@@ -1210,6 +1147,7 @@ export const ComponentDetail: React.FC = () => {
                     {previewComponent ? (
                       <Player
                         key={previewKey}
+                        errorFallback={PlayerErrorFallback}
                         component={previewComponent}
                         durationInFrames={durationInFrames}
                         fps={fps}
@@ -1256,7 +1194,7 @@ export const ComponentDetail: React.FC = () => {
                   lineNumbers: 'on',
                   roundedSelection: false,
                   scrollBeyondLastLine: false,
-                  readOnly: false,
+                  readOnly: isAIWorkingHere,
                   automaticLayout: true,
                   tabSize: 2,
                   insertSpaces: true,
@@ -1271,51 +1209,7 @@ export const ComponentDetail: React.FC = () => {
                   renderLineHighlight: 'all',
                   theme: 'vs-dark',
                 }}
-                beforeMount={(monaco: any) => {
-                  monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-                    jsx: monaco.languages.typescript.JsxEmit.React,
-                    jsxFactory: 'React.createElement',
-                    reactNamespace: 'React',
-                    allowNonTsExtensions: true,
-                    allowJs: true,
-                    target: monaco.languages.typescript.ScriptTarget.Latest,
-                    moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-                    module: monaco.languages.typescript.ModuleKind.CommonJS,
-                    noEmit: true,
-                    esModuleInterop: true,
-                    skipLibCheck: true,
-                  });
-
-                  monaco.languages.typescript.typescriptDefaults.addExtraLib(
-                    `
-                    declare module 'remotion' {
-                      export function useCurrentFrame(): number;
-                      export function useVideoConfig(): { fps: number; durationInFrames: number; width: number; height: number };
-                      export function interpolate(input: number, inputRange: number[], outputRange: number[], options?: any): number;
-                      export function spring(options: any): number;
-                      export const AbsoluteFill: React.FC<any>;
-                      export const Sequence: React.FC<any>;
-                      export const Video: React.FC<any>;
-                      export const Img: React.FC<any>;
-                      export const Audio: React.FC<any>;
-                      export const Easing: {
-                        linear: (t: number) => number;
-                        in: (easing: (t: number) => number) => (t: number) => number;
-                        out: (easing: (t: number) => number) => (t: number) => number;
-                        inOut: (easing: (t: number) => number) => (t: number) => number;
-                        ease: (t: number) => number;
-                        back: (overshoot?: number) => (t: number) => number;
-                        bounce: (t: number) => number;
-                        elastic: (amplitude?: number, period?: number) => (t: number) => number;
-                      };
-                    }
-                    
-                    declare const $PROPS: Record<string, any>;
-                    declare const React: typeof import('react');
-                    `,
-                    'remotion.d.ts'
-                  );
-                }}
+                beforeMount={configureMonaco}
                 theme="vs-dark"
                 loading={
                   <div className="h-full flex items-center justify-center text-gray-500">

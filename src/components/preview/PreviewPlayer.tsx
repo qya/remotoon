@@ -6,6 +6,36 @@ import { useEditorStore } from '../../store/editorStore';
 import { Timeline } from './Timeline';
 import { CanvasOverlay } from './CanvasOverlay';
 import { PreviewSettingsModal } from './PreviewSettingsModal';
+import { useAIStore } from '../../lib/ai/aiStore';
+
+const PHASE_TEXT: Record<string, string> = {
+  thinking: 'Thinking',
+  writing: 'Writing code',
+  compiling: 'Compiling',
+  fixing: 'Self-healing',
+};
+
+// Glowing frame + status pill around the canvas while the AI works.
+const AIActivityOverlay: React.FC = () => {
+  const generating = useAIStore((s) => s.generating);
+  const layerName = useEditorStore((s) =>
+    generating?.layerId ? s.currentProject?.layers.find((l) => l.id === generating.layerId)?.name : undefined,
+  );
+  if (!generating) return null;
+  const lines = generating.code ? generating.code.split('\n').length : 0;
+  const isNewLayer = layerName?.startsWith('✦ AI is composing');
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20">
+      <div className="absolute inset-0 rounded-sm ring-2 ring-[#00a8e8]/70 shadow-[0_0_40px_rgba(0,168,232,0.45)] animate-pulse" />
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur border border-[#00a8e8]/40 text-[11px] text-sky-100 shadow-lg">
+        <span className="inline-block animate-spin [animation-duration:2.5s]">✦</span>
+        <span className="font-medium">AI · {PHASE_TEXT[generating.phase] ?? 'Working'}</span>
+        {layerName && !isNewLayer && <span className="text-sky-300/70 max-w-[160px] truncate">“{layerName}”</span>}
+        {lines > 1 && <span className="text-sky-300/70">{lines} lines</span>}
+      </div>
+    </div>
+  );
+};
 import {
   Play,
   Pause,
@@ -132,6 +162,16 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [setCurrentFrame]);
 
+  // Other panels (e.g. AI Studio) request seeks through a window event.
+  useEffect(() => {
+    const onSeek = (e: Event) => {
+      const frame = Number((e as CustomEvent<number>).detail) || 0;
+      playerRef.current?.seekTo(frame);
+    };
+    window.addEventListener('remotoon:seek', onSeek);
+    return () => window.removeEventListener('remotoon:seek', onSeek);
+  }, []);
+
   const togglePlay = () => {
     setIsPlaying(!isPlaying);
   };
@@ -245,6 +285,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
             inputProps={{ layers, media } as DynamicCompositionProps}
             acknowledgeRemotionLicense
           />
+          <AIActivityOverlay />
           {/* Photoshop-style interactive canvas overlay */}
           {showOverlay && (
             <CanvasOverlay

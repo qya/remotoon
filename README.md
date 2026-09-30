@@ -20,6 +20,13 @@ A premium, powerful **Just-in-Time (JIT) Component Studio** for creating dynamic
 
 ## ✨ Core Features & Enhancements
 
+- ✦ **AI Studio (prompt → motion graphics)** - Describe an animation and an LLM writes a Remotion component that is compiled in your browser and dropped straight onto the timeline. You watch the code stream onto the canvas while it's written.
+  - **Edit selected layer** in plain language ("make it snappier", "sunset palette"); the component is hot-swapped with one-click Revert / Re-apply.
+  - **Self-healing code**: compile errors and runtime crashes are sent back to the model automatically (configurable retries). Each layer has its own error boundary, so one broken component never takes down the preview.
+  - **Auto-generated controls**: every `$PROPS.NAME ?? default` becomes a color picker, slider, toggle or text field in the Properties panel.
+  - **Bring your own model**: OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, local Ollama, or any OpenAI-compatible endpoint. Press **⌘K / Ctrl+K** anywhere in the editor to prompt.
+- 🎛️ **Live Code tab** - Edit the selected component's code in Monaco; valid code is compiled and applied as you type.
+- 🔤 **Text, Effects, Transitions & Filters** - Animated text presets, stackable motion effects (Ken Burns, shake, glitch, float…), enter/exit transitions and color filters that apply to any layer and render identically in export.
 - 🚀 **JIT Compilation** - Write and compile custom React / TSX components dynamically in the browser using Babel Standalone.
 - 🎨 **Dynamic Sidebar Tabs & Panel System** - A modular sidebar containing:
   - **Assets**: Upload and manage media assets.
@@ -84,7 +91,14 @@ function MyComponent() {
 }
 ```
 
-### 3. Sound Effects (SFX) & Animated Emojis
+### 3. Generate with AI
+1. Open a project; the **AI Studio** tab (✦, top of the left rail) is selected by default.
+2. Click **Connect AI**, pick a provider, paste your API key and choose a model (use **Fetch available models** if unsure). **Test connection** verifies it.
+3. Describe what you want, or pick a suggestion. Select a component layer to switch to **Edit selected**.
+
+> **Security note:** API keys are stored in your browser's `localStorage` and requests go directly from the browser to the provider. Use keys with spending limits and avoid shared machines. For local models, start Ollama with `OLLAMA_ORIGINS=* ollama serve` so the browser can reach it.
+
+### 4. Sound Effects (SFX) & Animated Emojis
 - Go to the **Audio** tab in the Left Sidebar and select the **SFX** tab to browse sound effects from `@remotion/sfx` and preview them directly.
 - Go to the **Stickers** tab and select the **Emojis** tab to search and add high-quality animated emojis powered by `@remotion/animated-emoji`.
 

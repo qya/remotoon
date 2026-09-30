@@ -7,4 +7,5 @@ export { ProjectManager } from './ProjectManager';
 export { TemplateSelector } from './TemplateSelector';
 export { SceneManager } from './SceneManager';
 export { ExportModal } from './ExportModal';
+export { AIPanel, FOCUS_AI_EVENT } from './AIPanel';
 

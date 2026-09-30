@@ -1,18 +1,25 @@
 import * as Babel from '@babel/standalone';
 import type { CompileResult } from '../types';
 import type { ComponentType } from 'react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   interpolate,
+  interpolateColors,
   useCurrentFrame,
   useVideoConfig,
   AbsoluteFill,
   Sequence,
+  Series,
+  Loop,
+  Freeze,
   staticFile,
   Video,
+  OffthreadVideo,
   Img,
   Audio,
   spring,
+  measureSpring,
+  random,
   Easing,
 } from 'remotion';
 
@@ -76,17 +83,35 @@ const stripExports = (code: string): string => {
     .replace(/\bexport\s+(?=const|let|var|function|class)/g, '');
 };
 
+// Detects which identifier is the "main" component. Must run BEFORE exports are
+// stripped so `export default` / `export const` hints can be used. Priority:
+// 1. explicit default export, 2. conventional names, 3. PascalCase named
+// export, 4. the last PascalCase declaration (helpers usually come first).
 const detectComponentName = (code: string): string | null => {
-  const namedFunctionMatch = code.match(/function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/);
-  const namedArrowMatch = code.match(
-    /(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/
-  );
+  const defaultFn = code.match(/export\s+default\s+function\s+([A-Za-z_$][\w$]*)/);
+  if (defaultFn) return defaultFn[1];
+  const defaultIdent = code.match(/export\s+default\s+([A-Z][\w$]*)\s*;?\s*$/m);
+  if (defaultIdent) return defaultIdent[1];
 
-  if (namedFunctionMatch?.[1] === 'Component' || namedArrowMatch?.[1] === 'Component') {
-    return 'Component';
+  const declRegex =
+    /(?:function\s+([A-Za-z_$][\w$]*)\s*\(|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:React\.)?(?:memo\()?\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*(?::[^=]+)?=>|[A-Za-z_$][\w$]*\s*=>))/g;
+  const declared: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = declRegex.exec(code)) !== null) {
+    declared.push(m[1] ?? m[2]);
   }
 
-  return namedFunctionMatch?.[1] ?? namedArrowMatch?.[1] ?? null;
+  for (const preferred of ['Component', 'MyAnimation']) {
+    if (declared.includes(preferred)) return preferred;
+  }
+
+  const namedExport = code.match(/export\s+(?:const|function|let)\s+([A-Z][\w$]*)/);
+  if (namedExport) return namedExport[1];
+
+  const pascal = declared.filter((n) => /^[A-Z]/.test(n));
+  if (pascal.length > 0) return pascal[pascal.length - 1];
+
+  return declared[0] ?? null;
 };
 
 // Extract component body from LLM-generated code (template-style)
@@ -154,11 +179,19 @@ export class JITCompiler {
       Audio,
       spring,
       Easing,
+      interpolateColors,
+      random,
+      measureSpring,
+      Series,
+      Loop,
+      Freeze,
+      OffthreadVideo,
       // Additional packages
       useEffect,
       useMemo,
       useRef,
       useState,
+      useCallback,
     };
 
     this.scope = {
@@ -176,6 +209,13 @@ export class JITCompiler {
       Audio,
       spring,
       Easing,
+      interpolateColors,
+      random,
+      measureSpring,
+      Series,
+      Loop,
+      Freeze,
+      OffthreadVideo,
       // React hooks available directly
       useState: React.useState,
       useEffect: React.useEffect,
@@ -247,9 +287,9 @@ export class JITCompiler {
       
       const withoutImports = stripImports(sanitizedCode);
       const withoutReactDestructuring = stripReactDestructuring(withoutImports);
+      const detectedComponentName = detectComponentName(withoutReactDestructuring);
       const withoutExports = stripExports(withoutReactDestructuring);
       const processedCode = convertPropsPlaceholders(withoutExports);
-      const detectedComponentName = detectComponentName(processedCode);
 
       // Transform JSX/TSX menggunakan Babel standalone
       let transformed: string;
@@ -287,7 +327,10 @@ export class JITCompiler {
           ? `typeof ${detectedComponentName} !== 'undefined' ? ${detectedComponentName} :`
           : '';
 
-        // Build the executor function
+        // Build the executor function. User code runs inside an inner function
+        // so its top-level declarations can shadow sandbox names (e.g. an AI
+        // writing `const fade = ...` or `const Circle = ...`) without a
+        // "Identifier has already been declared" SyntaxError.
         const executor = new Function(
           ...sandboxKeys,
           `
@@ -295,27 +338,36 @@ export class JITCompiler {
           var exports = {};
           var module = { exports: exports };
           var __props = {};
-          
-          ${transformed}
-          
-          // Try to find the component in various ways
-          var ComponentFn = 
-            ${componentLookup}
-            typeof Component !== 'undefined' ? Component :
-            exports.Component || 
-            exports.default || 
-            module.exports.Component || 
-            module.exports.default ||
-            module.exports;
-          
+
+          var ComponentFn = (function () {
+            ${transformed}
+
+            // Try to find the component in various ways
+            return (
+              ${componentLookup}
+              typeof Component !== 'undefined' ? Component :
+              exports.Component ||
+              exports.default ||
+              module.exports.Component ||
+              module.exports.default ||
+              module.exports
+            );
+          })();
+
           if (typeof ComponentFn !== 'function') {
             return null;
           }
 
-          // Wrapper keeps $PROPS placeholders working through closure variable.
+          var isClass = !!(ComponentFn.prototype && ComponentFn.prototype.isReactComponent);
+
+          // Wrapper keeps $PROPS placeholders working through the closure
+          // variable. Plain function components are invoked directly so
+          // __props is always set synchronously right before their body runs.
           return function WrappedComponent(props) {
             __props = props || {};
-            return React.createElement(ComponentFn, props || {});
+            return isClass
+              ? React.createElement(ComponentFn, __props)
+              : ComponentFn(__props);
           };
           `
         );

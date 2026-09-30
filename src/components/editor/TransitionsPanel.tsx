@@ -1,65 +1,118 @@
 import React from 'react';
-import { Clapperboard, Layers, Shuffle, MoveRight } from 'lucide-react';
+import { Clapperboard, LogIn, LogOut, X } from 'lucide-react';
+import { TRANSITION_KINDS, isTransition, type TransitionKind, type TransitionParams } from '../../lib/layerEffects';
+import { AskAIButton, PanelHeader, SelectLayerHint, Slider } from './panelShared';
+import { useAskAI, useEffectActions, useSelectedLayer } from './panelHooks';
+
+// Tiny CSS-only preview of each transition kind (loops on hover).
+const previewStyle = (kind: TransitionKind): React.CSSProperties => {
+  switch (kind) {
+    case 'slide-left': return { transform: 'translateX(40%)' };
+    case 'slide-right': return { transform: 'translateX(-40%)' };
+    case 'slide-up': return { transform: 'translateY(40%)' };
+    case 'slide-down': return { transform: 'translateY(-40%)' };
+    case 'zoom': return { transform: 'scale(0.55)', opacity: 0.5 };
+    case 'pop': return { transform: 'scale(0.2)' };
+    case 'blur': return { filter: 'blur(4px)', opacity: 0.5 };
+    case 'wipe': return { clipPath: 'inset(0 55% 0 0)' };
+    case 'iris': return { clipPath: 'circle(28% at 50% 50%)' };
+    case 'spin': return { transform: 'rotate(-120deg) scale(0.5)' };
+    case 'flip': return { transform: 'perspective(200px) rotateY(60deg)' };
+    default: return { opacity: 0.3 };
+  }
+};
+
+const TransitionSection: React.FC<{ direction: 'in' | 'out' }> = ({ direction }) => {
+  const layer = useSelectedLayer()!;
+  const { upsert, remove } = useEffectActions();
+  const match = isTransition(direction);
+  const current = layer.effects.find(match)?.params as TransitionParams | undefined;
+  const maxDuration = Math.max(2, Math.floor(layer.durationInFrames / 2));
+
+  const set = (patch: Partial<TransitionParams>) => {
+    const params: TransitionParams = {
+      kind: current?.kind ?? 'fade',
+      duration: Math.min(current?.duration ?? 15, maxDuration),
+      direction,
+      ...patch,
+    };
+    upsert(layer, match, { name: `${direction === 'in' ? 'In' : 'Out'}: ${params.kind}`, type: 'transition', params });
+  };
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[11px] font-medium text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+          {direction === 'in' ? <LogIn className="w-3 h-3 text-rose-400" /> : <LogOut className="w-3 h-3 text-rose-400" />}
+          {direction === 'in' ? 'Enter' : 'Exit'}
+        </h4>
+        {current && (
+          <button onClick={() => remove(layer, match)} className="flex items-center gap-0.5 text-[10px] text-gray-500 hover:text-white">
+            <X className="w-3 h-3" /> None
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {TRANSITION_KINDS.map((t) => {
+          const active = current?.kind === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => set({ kind: t.id })}
+              aria-pressed={active}
+              className={`group rounded-lg border overflow-hidden transition-colors ${
+                active ? 'border-rose-400 bg-rose-500/10' : 'border-[#333] bg-[#202020] hover:border-[#555]'
+              }`}
+            >
+              <div className="h-9 flex items-center justify-center bg-[#111] overflow-hidden">
+                <div
+                  className="w-8 h-5 rounded-sm bg-gradient-to-br from-rose-400 to-orange-300 transition-all duration-700 group-hover:!transform-none group-hover:!opacity-100 group-hover:!filter-none group-hover:![clip-path:none]"
+                  style={previewStyle(t.id)}
+                />
+              </div>
+              <div className="py-1 text-[10px] text-gray-300">{t.name}</div>
+            </button>
+          );
+        })}
+      </div>
+      {current && (
+        <Slider
+          id={`transition-${direction}-duration`}
+          label="Duration"
+          min={2}
+          max={maxDuration}
+          value={Math.min(current.duration, maxDuration)}
+          unit=" fr"
+          onChange={(v) => set({ duration: Math.round(v) })}
+        />
+      )}
+    </section>
+  );
+};
 
 export const TransitionsPanel: React.FC = () => {
+  const layer = useSelectedLayer();
+  const askAI = useAskAI();
+
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a] text-gray-200">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#333]">
-        <Clapperboard className="w-4 h-4 text-rose-400" />
-        <span className="text-sm font-medium">Transitions</span>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden select-none">
-        {/* Background glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="w-14 h-14 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(244,63,94,0.15)] animate-pulse">
-            <Clapperboard className="w-7 h-7 text-rose-400" />
-          </div>
-
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20 mb-2">
-            Coming Soon
-          </span>
-
-          <h3 className="text-sm font-semibold text-white mb-1">Smooth Transitions</h3>
-          <p className="text-xs text-gray-400 max-w-[200px] leading-relaxed mb-6">
-            Blend your scenes seamlessly with cinematic cuts, fades, slides, and cross-zooms.
+      <PanelHeader icon={<Clapperboard className="w-4 h-4 text-rose-400" />} title="Transitions" />
+      {!layer ? (
+        <SelectLayerHint what="enter and exit transitions" />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-3 space-y-5">
+          <p className="text-[11px] text-gray-500 truncate">
+            Applying to <span className="text-gray-300">{layer.name}</span> · hover a tile to preview
           </p>
+          <TransitionSection direction="in" />
+          <div className="border-t border-[#333]" />
+          <TransitionSection direction="out" />
+          <AskAIButton
+            label="Invent a custom transition with AI"
+            onClick={() => askAI('A full-screen transition wipe with ', 'new')}
+          />
         </div>
-
-        {/* Feature Mockups */}
-        <div className="w-full space-y-2 relative z-10 opacity-40">
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Layers className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-16 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-12" />
-            </div>
-            <span className="text-[10px] text-gray-500">Crossfade</span>
-          </div>
-
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <MoveRight className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-20 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-24" />
-            </div>
-            <span className="text-[10px] text-gray-500">Slide Left</span>
-          </div>
-
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Shuffle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-12 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-16" />
-            </div>
-            <span className="text-[10px] text-gray-500">Whip Pan</span>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

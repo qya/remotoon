@@ -15,6 +15,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { Thumbnail } from '@remotion/player';
 import { DynamicComposition } from '../../compositions';
 import type { MediaItem } from '../../types';
+import { computeEffectStyle } from '../../lib/layerEffects';
 import {
   Output,
   Mp4OutputFormat,
@@ -311,7 +312,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
             const video = cached.element as HTMLVideoElement;
             ctx.save();
             const { x, y, scale, rotation, opacity, blendMode, skewX, skewY } = layer.transform;
-            ctx.globalAlpha = opacity;
+            // Layer effects (filters/transitions/animations) — same math as the preview.
+            const fx = computeEffectStyle(layer.effects, {
+              frame: f - layer.startFrame,
+              durationInFrames: layer.durationInFrames,
+              fps,
+              width: exportWidth,
+              height: exportHeight,
+            });
+            ctx.globalAlpha = opacity * fx.opacity;
+            if (fx.filter) ctx.filter = fx.filter;
             ctx.globalCompositeOperation = (blendMode || 'source-over') as GlobalCompositeOperation;
 
             ctx.translate(exportWidth / 2, exportHeight / 2);
@@ -322,6 +332,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
               const tanX = Math.tan(((skewX || 0) * Math.PI) / 180);
               const tanY = Math.tan(((skewY || 0) * Math.PI) / 180);
               ctx.transform(1, tanY, tanX, 1, 0, 0);
+            }
+            if (fx.transform) {
+              try {
+                const m = new DOMMatrix(fx.transform);
+                ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+              } catch {
+                // Unparseable transform: skip effect motion for this frame.
+              }
             }
             ctx.translate(-exportWidth / 2, -exportHeight / 2);
 

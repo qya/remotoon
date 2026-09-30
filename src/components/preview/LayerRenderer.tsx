@@ -1,30 +1,34 @@
 import React from 'react';
 import { AbsoluteFill, useCurrentFrame, useVideoConfig, Video, Img, Audio } from 'remotion';
 import type { Layer, MediaItem } from '../../types';
+import { computeEffectStyle } from '../../lib/layerEffects';
+import { LayerErrorBoundary } from './LayerErrorBoundary';
 
 interface LayerRendererProps {
   layer: Layer;
   media?: MediaItem;
 }
 
+// Rendered inside a <Sequence from={layer.startFrame}> (see DynamicComposition),
+// so useCurrentFrame() here and inside component layers is layer-relative.
 export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) => {
   const frame = useCurrentFrame();
-  useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
 
-  // Check if layer is visible at current frame
-  const isVisible =
-    frame >= layer.startFrame &&
-    frame < layer.startFrame + layer.durationInFrames;
-
-  if (!isVisible || !layer.visible) {
+  if (!layer.visible) {
     return null;
   }
 
-  // Frame within the layer (can be used for video seeking in the future)
-  // const relativeFrame = Math.max(0, frame - layer.startFrame);
-
   // Apply transform
   const { x, y, scale, rotation, opacity, blendMode, skewX, skewY } = layer.transform;
+
+  const fx = computeEffectStyle(layer.effects, {
+    frame,
+    durationInFrames: layer.durationInFrames,
+    fps,
+    width,
+    height,
+  });
 
   const transformStyle: React.CSSProperties = {
     transform: [
@@ -33,8 +37,11 @@ export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) =>
       `rotate(${rotation}deg)`,
       skewX ? `skewX(${skewX}deg)` : '',
       skewY ? `skewY(${skewY}deg)` : '',
+      fx.transform,
     ].filter(Boolean).join(' '),
-    opacity,
+    opacity: opacity * fx.opacity,
+    filter: fx.filter || undefined,
+    clipPath: fx.clipPath,
     mixBlendMode: (blendMode || 'normal') as React.CSSProperties['mixBlendMode'],
     transformOrigin: 'center center',
   };
@@ -86,7 +93,7 @@ export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) =>
         }
         return null;
 
-      case 'component':
+      case 'component': {
         if (!layer.compiledComponent) {
           return (
             <div
@@ -105,10 +112,13 @@ export const LayerRenderer: React.FC<LayerRendererProps> = ({ layer, media }) =>
         // Pass props to the component
         const componentProps = layer.props || {};
         return (
-          <div style={{ width: '100%', height: '100%' }}>
-            <Component {...componentProps} />
+          <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <LayerErrorBoundary layerId={layer.id} layerName={layer.name} resetKey={Component}>
+              <Component {...componentProps} />
+            </LayerErrorBoundary>
           </div>
         );
+      }
 
       case 'text':
         return (

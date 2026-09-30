@@ -1,274 +1,164 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
-import { RotateCcw, Save, AlertCircle, CheckCircle, Code } from 'lucide-react';
+import { AlertCircle, CheckCircle, Code, Sparkles, Wrench, Loader2 } from 'lucide-react';
 import { jitCompiler } from '../../lib/jitCompiler';
+import { useAIStore } from '../../lib/ai/aiStore';
+import { runtimeFixPrompt } from '../../lib/ai/generate';
+import { configureMonaco, monacoEditorOptions } from '../../lib/monacoSetup';
 import Editor from '@monaco-editor/react';
 
+// Live code editor for the selected component layer. Valid code is compiled
+// and hot-swapped into the preview (and persisted) as you type.
 export const CodeEditor: React.FC = () => {
   const currentProject = useEditorStore((state) => state.currentProject);
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
-  const updateLayer = useEditorStore((state) => state.updateLayer);
-  
+  const setLayerCode = useEditorStore((state) => state.setLayerCode);
+  const setActiveLeftTool = useEditorStore((state) => state.setActiveLeftTool);
+  const setPendingPrompt = useAIStore((s) => s.setPendingPrompt);
+  const runtimeErrors = useAIStore((s) => s.layerErrors);
+  const generating = useAIStore((s) => s.generating);
+
   const selectedLayer = useMemo(() => {
     if (!currentProject || !selectedLayerId) return null;
-    return currentProject.layers.find((l) => l.id === selectedLayerId) || null;
+    const scene = currentProject.scenes.find((s) => s.id === currentProject.currentSceneId);
+    return (
+      scene?.layers.find((l) => l.id === selectedLayerId) ??
+      currentProject.layers.find((l) => l.id === selectedLayerId) ??
+      null
+    );
   }, [currentProject, selectedLayerId]);
-  
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isValid, setIsValid] = useState(true);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  // Update code when selected layer changes and compile on first load
+  const layerId = selectedLayer?.id;
+  const layerCode = selectedLayer?.componentCode ?? '';
+
+  const [code, setCode] = useState(layerCode);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<'idle' | 'compiling' | 'live'>('idle');
+  // Last code we know the store holds; lets us tell external (AI) edits
+  // apart from our own writes.
+  const syncedRef = useRef(layerCode);
+
+  // Sync editor with layer switches and external changes (e.g. AI rewrites)
   useEffect(() => {
-    if (selectedLayer?.type === 'component' && selectedLayer.componentCode) {
-      setCode(selectedLayer.componentCode);
-      setError(null);
-      setIsValid(true);
-      
-      // Compile on first load if not already compiled
-      if (!selectedLayer.compiledComponent) {
-        const result = jitCompiler.compile(selectedLayer.componentCode);
-        if (result.success) {
-          updateLayer(selectedLayer.id, {
-            compiledComponent: result.component,
-          });
-        }
-      }
-    } else {
-      setCode('');
+    if (layerCode !== syncedRef.current) {
+      syncedRef.current = layerCode;
+      setCode(layerCode);
       setError(null);
     }
-  }, [selectedLayer?.id, selectedLayer?.compiledComponent]);
+  }, [layerId, layerCode]);
 
-  // Auto-compile on change (debounced) - updates preview in real-time
   useEffect(() => {
-    if (!selectedLayer || selectedLayer.type !== 'component') return;
+    syncedRef.current = layerCode;
+    setCode(layerCode);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layerId]);
 
+  // Debounced compile + hot swap
+  useEffect(() => {
+    if (!layerId || code === syncedRef.current) return;
+    setStatus('compiling');
     const timeout = setTimeout(() => {
       const result = jitCompiler.compile(code);
       if (result.success) {
         setError(null);
-        setIsValid(true);
-        // Update the preview in real-time
-        updateLayer(selectedLayer.id, {
-          compiledComponent: result.component,
-        });
+        syncedRef.current = code;
+        setLayerCode(layerId, code, result.component);
+        setStatus('live');
       } else {
         setError(result.error || 'Compilation error');
-        setIsValid(false);
+        setStatus('idle');
       }
-    }, 500);
-
+    }, 450);
     return () => clearTimeout(timeout);
-  }, [code, selectedLayer, updateLayer]);
+  }, [code, layerId, setLayerCode]);
 
-  const handleSave = useCallback(() => {
-    if (selectedLayer && selectedLayer.type === 'component') {
-      const result = jitCompiler.compile(code);
-      updateLayer(selectedLayer.id, {
-        componentCode: code,
-        compiledComponent: result.success ? result.component : null,
-      });
-      setLastSaved(new Date());
-    }
-  }, [selectedLayer, code, updateLayer]);
-
-  const handleReset = useCallback(() => {
-    if (selectedLayer?.type === 'component') {
-      setCode(selectedLayer.componentCode || '');
-      setError(null);
-      setIsValid(true);
-    }
-  }, [selectedLayer]);
-
-  // Keyboard shortcut for save
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSave]);
-
-  // Monaco editor options
-  const editorOptions = useMemo(() => ({
-    minimap: { enabled: false },
-    fontSize: 14,
-    lineNumbers: 'on' as const,
-    roundedSelection: false,
-    scrollBeyondLastLine: false,
-    readOnly: false,
-    automaticLayout: true,
-    tabSize: 2,
-    insertSpaces: true,
-    formatOnPaste: true,
-    formatOnType: true,
-    wordWrap: 'on' as const,
-    folding: true,
-    foldingHighlight: true,
-    foldingStrategy: 'auto' as const,
-    showFoldingControls: 'always' as const,
-    matchBrackets: 'always' as const,
-    renderLineHighlight: 'all' as const,
-    theme: 'vs-dark',
-  }), []);
-
-  // Monaco editor before mount - configure TypeScript
-  const handleBeforeMount = (monaco: any) => {
-    // Configure TypeScript for JSX
-    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-      jsx: monaco.languages.typescript.JsxEmit.React,
-      jsxFactory: 'React.createElement',
-      reactNamespace: 'React',
-      allowNonTsExtensions: true,
-      allowJs: true,
-      target: monaco.languages.typescript.ScriptTarget.Latest,
-      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-      module: monaco.languages.typescript.ModuleKind.CommonJS,
-      noEmit: true,
-      esModuleInterop: true,
-      skipLibCheck: true,
-    });
-
-    // Add type definitions for Remotion
-    monaco.languages.typescript.typescriptDefaults.addExtraLib(
-      `
-      declare module 'remotion' {
-        export function useCurrentFrame(): number;
-        export function useVideoConfig(): { fps: number; durationInFrames: number; width: number; height: number };
-        export function interpolate(input: number, inputRange: number[], outputRange: number[], options?: any): number;
-        export function spring(options: any): number;
-        export const AbsoluteFill: React.FC<any>;
-        export const Sequence: React.FC<any>;
-        export const Video: React.FC<any>;
-        export const Img: React.FC<any>;
-        export const Audio: React.FC<any>;
-        export const Easing: {
-          linear: (t: number) => number;
-          in: (easing: (t: number) => number) => (t: number) => number;
-          out: (easing: (t: number) => number) => (t: number) => number;
-          inOut: (easing: (t: number) => number) => (t: number) => number;
-          ease: (t: number) => number;
-          back: (overshoot?: number) => (t: number) => number;
-          bounce: (t: number) => number;
-          elastic: (amplitude?: number, period?: number) => (t: number) => number;
-        };
-      }
-      
-      declare const $PROPS: Record<string, any>;
-      declare const React: typeof import('react');
-      `,
-      'remotion.d.ts'
-    );
+  const askAI = (text: string, autoSend: boolean) => {
+    setPendingPrompt({ text, target: 'selected', autoSend });
+    setActiveLeftTool('ai');
   };
 
   if (!selectedLayer || selectedLayer.type !== 'component' || !currentProject) {
     return (
       <div className="h-full flex items-center justify-center text-gray-500">
         <div className="text-center p-6">
-          <Code className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Select a component layer to edit code</p>
-          <p className="text-xs text-gray-600 mt-2">
-            Only component layers can be edited
-          </p>
+          <Code className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">Select a component layer to edit its code</p>
         </div>
       </div>
     );
   }
 
+  const runtimeError = runtimeErrors[selectedLayer.id];
+  const problem = error ?? runtimeError ?? null;
+  const isAIWorking = generating?.layerId === selectedLayer.id;
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-editor-panel border-b border-gray-700">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-gray-300">
-            Editing: {selectedLayer.name}
-          </span>
-          <span
-            className={`px-2 py-0.5 rounded text-xs font-medium ${
-              isValid ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-            }`}
-          >
-            {isValid ? 'Valid' : 'Error'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {lastSaved && (
-            <span className="text-xs text-gray-500">
-              Saved {lastSaved.toLocaleTimeString()}
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#333] bg-[#161616]">
+        <div className="flex items-center gap-2 text-[11px]">
+          {isAIWorking ? (
+            <span className="flex items-center gap-1 text-sky-300">
+              <Loader2 className="w-3 h-3 animate-spin" /> AI is editing…
+            </span>
+          ) : problem ? (
+            <span className="flex items-center gap-1 text-red-400">
+              <AlertCircle className="w-3 h-3" /> {error ? 'Compile error' : 'Runtime error'}
+            </span>
+          ) : status === 'compiling' ? (
+            <span className="flex items-center gap-1 text-gray-400">
+              <Loader2 className="w-3 h-3 animate-spin" /> Compiling
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-emerald-400">
+              <CheckCircle className="w-3 h-3" /> Live
             </span>
           )}
-          <button
-            onClick={handleReset}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400"
-            title="Reset to saved"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!isValid}
-            className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save className="w-4 h-4" />
-            Save (Ctrl+S)
-          </button>
         </div>
+        <button
+          onClick={() => askAI('', false)}
+          className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] text-sky-300 hover:bg-[#00a8e8]/10"
+          title="Edit this layer with AI"
+        >
+          <Sparkles className="w-3 h-3" /> Edit with AI
+        </button>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="px-4 py-3 bg-red-500/10 border-b border-red-500/30 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm text-red-400 font-medium">Compilation Error</p>
-            <p className="text-xs text-red-300/80 font-mono mt-1">{error}</p>
-          </div>
+      {problem && (
+        <div className="px-3 py-2 bg-red-500/10 border-b border-red-500/30 flex items-start gap-2">
+          <p className="flex-1 text-[11px] text-red-300/90 font-mono break-words line-clamp-4">{problem}</p>
+          <button
+            onClick={() => askAI(runtimeFixPrompt(problem), true)}
+            disabled={!!generating}
+            className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-[11px] text-red-200 disabled:opacity-40"
+          >
+            <Wrench className="w-3 h-3" /> Fix with AI
+          </button>
         </div>
       )}
 
-      {/* Success Indicator */}
-      {isValid && !error && code !== selectedLayer.componentCode && (
-        <div className="px-4 py-2 bg-green-500/10 border-b border-green-500/30 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-green-500" />
-          <span className="text-xs text-green-400">Code is valid - ready to save</span>
-        </div>
-      )}
-
-      {/* Monaco Editor */}
       <div className="flex-1 min-h-0">
         <Editor
           height="100%"
           defaultLanguage="typescript"
           language="typescript"
+          path={`file:///layer-${selectedLayer.id}.tsx`}
           value={code}
           onChange={(value) => setCode(value || '')}
-          options={editorOptions}
-          beforeMount={handleBeforeMount}
+          options={{ ...monacoEditorOptions, fontSize: 12, readOnly: isAIWorking }}
+          beforeMount={configureMonaco}
           theme="vs-dark"
           loading={
             <div className="h-full flex items-center justify-center text-gray-500">
-              <div className="animate-pulse">Loading editor...</div>
+              <div className="animate-pulse text-xs">Loading editor…</div>
             </div>
           }
         />
       </div>
 
-      {/* Footer Info */}
-      <div className="px-4 py-2 bg-editor-panel border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
-        <div className="flex items-center gap-4">
-          <span>Lines: {code.split('\n').length}</span>
-          <span>Chars: {code.length}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span>Layer: {selectedLayer.name}</span>
-          <span>Type: {selectedLayer.type}</span>
-        </div>
+      <div className="px-3 py-1 border-t border-[#333] flex items-center justify-between text-[10px] text-gray-500 bg-[#161616]">
+        <span>{code.split('\n').length} lines</span>
+        <span>Changes apply automatically</span>
       </div>
     </div>
   );

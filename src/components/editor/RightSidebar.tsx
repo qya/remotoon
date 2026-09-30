@@ -17,19 +17,12 @@ import {
   Hash,
   SlidersHorizontal,
   Blend,
+  Code2,
+  AlertTriangle,
 } from 'lucide-react';
-
-// Extract $PROPS placeholders from component code
-const extractPropsFromCode = (code: string): string[] => {
-  if (!code) return [];
-  const regex = /\$PROPS\.([A-Za-z_][A-Za-z0-9_]*)/g;
-  const matches = new Set<string>();
-  let match;
-  while ((match = regex.exec(code)) !== null) {
-    matches.add(match[1]);
-  }
-  return Array.from(matches);
-};
+import { CodeEditor } from './CodeEditor';
+import { inferPropsSchema, toHexColor, type PropField } from '../../lib/propsSchema';
+import { useAIStore } from '../../lib/ai/aiStore';
 
 export const RightSidebar: React.FC = () => {
   const currentProject = useEditorStore((state) => state.currentProject);
@@ -55,6 +48,13 @@ export const RightSidebar: React.FC = () => {
   const updateLayerTransform = useEditorStore((state) => state.updateLayerTransform);
   const updateLayerTiming = useEditorStore((state) => state.updateLayerTiming);
   const updateLayerProps = useEditorStore((state) => state.updateLayerProps);
+  const activeRightTab = useEditorStore((state) => state.activeRightTab);
+  const setActiveRightTab = useEditorStore((state) => state.setActiveRightTab);
+  const layerError = useAIStore((s) => (selectedLayerId ? s.layerErrors[selectedLayerId] : undefined));
+  const propFields = useMemo(
+    () => inferPropsSchema(selectedLayer?.componentCode),
+    [selectedLayer?.componentCode],
+  );
 
   const formatTime = (frame: number, fps: number) => {
     const seconds = frame / fps;
@@ -96,13 +96,46 @@ export const RightSidebar: React.FC = () => {
     );
   }
 
+  const isComponent = selectedLayer.type === 'component';
+  const showCode = isComponent && activeRightTab === 'code';
+
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a]">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#333]">
-        <span className="text-sm font-medium text-gray-200">Properties</span>
+        {isComponent ? (
+          <div className="flex items-center gap-1 p-0.5 rounded-md bg-[#0f0f0f] border border-[#2a2a2a]" role="tablist">
+            {(['properties', 'code'] as const).map((tab) => (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={activeRightTab === tab}
+                onClick={() => setActiveRightTab(tab)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  activeRightTab === tab ? 'bg-[#252525] text-white' : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {tab === 'code' ? <Code2 className="w-3 h-3" /> : <SlidersHorizontal className="w-3 h-3" />}
+                {tab === 'code' ? 'Code' : 'Properties'}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-sm font-medium text-gray-200">Properties</span>
+        )}
+        {isComponent && layerError && (
+          <span className="flex items-center gap-1 text-[10px] text-red-400" title={layerError}>
+            <AlertTriangle className="w-3 h-3" /> Error
+          </span>
+        )}
       </div>
 
+      {showCode ? (
+        <div className="flex-1 min-h-0">
+          <CodeEditor />
+        </div>
+      ) : (
+      <>
       {/* Layer Info */}
       <div className="p-3 border-b border-[#333]">
         <div className="flex items-center gap-3">
@@ -344,44 +377,11 @@ export const RightSidebar: React.FC = () => {
               Props
             </h4>
 
-            {(() => {
-              const propKeys = extractPropsFromCode(selectedLayer.componentCode);
-              if (propKeys.length === 0) {
-                return (
-                  <p className="text-xs text-gray-500 italic">
-                    No customizable props found.
-                  </p>
-                );
-              }
-
-              const currentProps = selectedLayer.props || {};
-
-              return (
-                <div className="space-y-2">
-                  {propKeys.map((key) => (
-                    <div key={key}>
-                      <label className="text-xs text-gray-400 block mb-1 flex items-center gap-1">
-                        <Hash className="w-3 h-3 text-[#00a8e8]" />
-                        {key}
-                      </label>
-                      <input
-                        type="text"
-                        value={currentProps[key] || ''}
-                        placeholder={`Default value...`}
-                        onChange={(e) => {
-                          const newProps = { ...currentProps, [key]: e.target.value };
-                          if (!e.target.value) {
-                            delete newProps[key];
-                          }
-                          updateLayerProps(selectedLayer.id, newProps);
-                        }}
-                        className="w-full px-2 py-1.5 bg-[#252525] border border-[#333] rounded text-sm text-gray-200 focus:border-[#00a8e8] focus:outline-none"
-                      />
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
+            <PropsEditor
+              fields={propFields}
+              values={selectedLayer.props || {}}
+              onChange={(next) => updateLayerProps(selectedLayer.id, next)}
+            />
           </div>
         )}
 
@@ -418,6 +418,136 @@ export const RightSidebar: React.FC = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
+    </div>
+  );
+};
+
+// Typed controls generated from `$PROPS.NAME ?? default` usages in the code.
+const PropsEditor: React.FC<{
+  fields: PropField[];
+  values: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}> = ({ fields, values, onChange }) => {
+  if (fields.length === 0) {
+    return (
+      <p className="text-xs text-gray-500 italic">
+        No customizable props found. Ask the AI to “expose the colors and texts as props”.
+      </p>
+    );
+  }
+
+  const setValue = (key: string, value: unknown) => {
+    const next = { ...values };
+    if (value === undefined || value === '') delete next[key];
+    else next[key] = value;
+    onChange(next);
+  };
+
+  const inputCls =
+    'w-full px-2 py-1.5 bg-[#252525] border border-[#333] rounded text-sm text-gray-200 focus:border-[#00a8e8] focus:outline-none';
+
+  return (
+    <div className="space-y-2.5">
+      {fields.map((field) => {
+        const id = `prop-${field.key}`;
+        const value = values[field.key];
+        const isSet = value !== undefined;
+        const shown = isSet ? value : field.defaultValue;
+
+        return (
+          <div key={field.key}>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor={id} className="text-xs text-gray-400 flex items-center gap-1" title={field.key}>
+                <Hash className="w-3 h-3 text-[#00a8e8]" />
+                {field.label}
+              </label>
+              {isSet && (
+                <button
+                  onClick={() => setValue(field.key, undefined)}
+                  className="text-[10px] text-gray-500 hover:text-gray-300"
+                  title="Reset to default"
+                >
+                  reset
+                </button>
+              )}
+            </div>
+
+            {field.kind === 'color' ? (
+              <div className="flex items-center gap-2">
+                <input
+                  id={id}
+                  type="color"
+                  value={toHexColor(shown) ?? '#ffffff'}
+                  onChange={(e) => setValue(field.key, e.target.value)}
+                  className="w-8 h-8 rounded border border-[#333] bg-transparent cursor-pointer p-0.5"
+                />
+                <input
+                  aria-label={`${field.label} value`}
+                  type="text"
+                  value={isSet ? String(value) : ''}
+                  placeholder={String(field.defaultValue ?? '')}
+                  onChange={(e) => setValue(field.key, e.target.value)}
+                  className={`${inputCls} font-mono text-xs`}
+                />
+              </div>
+            ) : field.kind === 'number' ? (
+              <div className="flex items-center gap-2">
+                {typeof field.defaultValue === 'number' && (
+                  <input
+                    aria-label={`${field.label} slider`}
+                    type="range"
+                    min={Math.min(0, field.defaultValue * 2)}
+                    max={Math.max(1, Math.abs(field.defaultValue) * 3)}
+                    step={Math.abs(field.defaultValue) <= 3 ? 0.05 : 1}
+                    value={Number(shown ?? 0)}
+                    onChange={(e) => setValue(field.key, parseFloat(e.target.value))}
+                    className="flex-1 h-1.5 accent-[#00a8e8]"
+                  />
+                )}
+                <input
+                  id={id}
+                  type="number"
+                  value={isSet ? Number(value) : ''}
+                  placeholder={field.defaultValue !== undefined ? String(field.defaultValue) : ''}
+                  onChange={(e) => setValue(field.key, e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                  className={`${inputCls} ${typeof field.defaultValue === 'number' ? 'w-20' : ''}`}
+                />
+              </div>
+            ) : field.kind === 'boolean' ? (
+              <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                <input
+                  id={id}
+                  type="checkbox"
+                  checked={Boolean(shown)}
+                  onChange={(e) => setValue(field.key, e.target.checked)}
+                  className="accent-[#00a8e8]"
+                />
+                {shown ? 'On' : 'Off'}
+              </label>
+            ) : field.multiline ? (
+              <textarea
+                id={id}
+                rows={3}
+                value={isSet ? String(value) : ''}
+                placeholder={String(field.defaultValue ?? 'Default value…')}
+                onChange={(e) => setValue(field.key, e.target.value)}
+                className={`${inputCls} resize-y`}
+              />
+            ) : (
+              <input
+                id={id}
+                type="text"
+                value={isSet ? String(value) : ''}
+                placeholder={String(field.defaultValue ?? 'Default value…')}
+                onChange={(e) => setValue(field.key, e.target.value)}
+                className={inputCls}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };

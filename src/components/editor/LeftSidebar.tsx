@@ -8,11 +8,14 @@ import { StickersPanel } from './StickersPanel';
 import { EffectsPanel } from './EffectsPanel';
 import { TransitionsPanel } from './TransitionsPanel';
 import { FiltersPanel } from './FiltersPanel';
+import { AIPanel } from './AIPanel';
 
 export const LeftSidebar: React.FC = () => {
   const activeLeftTool = useEditorStore((state) => state.activeLeftTool);
 
   switch (activeLeftTool) {
+    case 'ai':
+      return <AIPanel />;
     case 'assets':
       return <AssetsPanel />;
     case 'components':

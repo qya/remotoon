@@ -1,7 +1,9 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, useParams, Navigate } from 'react-router-dom';
 import { useEditorStore } from './store/editorStore';
-import { LeftSidebar, RightSidebar, ComponentLibraryModal, SceneManager, ExportModal } from './components/editor';
+import { LeftSidebar, RightSidebar, ComponentLibraryModal, SceneManager, ExportModal, FOCUS_AI_EVENT } from './components/editor';
+import { AISettingsModal } from './components/ai/AISettingsModal';
+import { useAIStore } from './lib/ai/aiStore';
 import { PreviewPlayer } from './components/preview';
 import { Projects } from './pages/Projects';
 import { Landing } from './pages/Landing';
@@ -20,8 +22,16 @@ import {
   Image as ImageIcon,
   Box,
   ChevronLeft,
-  Save
+  Save,
+  Sticker,
 } from 'lucide-react';
+
+// Tiny live indicator on the AI rail button while a generation runs.
+const AIRailBadge: React.FC = () => {
+  const generating = useAIStore((s) => !!s.generating);
+  if (!generating) return null;
+  return <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-sky-400 animate-ping" />;
+};
 
 // Editor component that loads project by ID
 function Editor() {
@@ -57,17 +67,31 @@ function Editor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // ⌘K / Ctrl+K jumps to the AI prompt from anywhere in the editor.
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setActiveLeftTool('ai');
+        setTimeout(() => window.dispatchEvent(new Event(FOCUS_AI_EVENT)), 0);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setActiveLeftTool]);
+
   // If project not found, redirect to projects
   if (!id || !projects.find(p => p.id === id)) {
     return <Navigate to="/projects" replace />;
   }
 
   const leftTools = [
+    { id: 'ai', icon: Sparkles, label: 'AI Studio (⌘K)' },
     { id: 'assets', icon: FolderOpen, label: 'Assets' },
     { id: 'components', icon: Box, label: 'Components' },
     { id: 'audio', icon: Headphones, label: 'Audio' },
     { id: 'text', icon: Type, label: 'Text' },
-    { id: 'stickers', icon: Sparkles, label: 'Stickers' },
+    { id: 'stickers', icon: Sticker, label: 'Stickers' },
     { id: 'effects', icon: Wand2, label: 'Effects' },
     { id: 'transitions', icon: Clapperboard, label: 'Transitions' },
     { id: 'filters', icon: ImageIcon, label: 'Filters' },
@@ -154,17 +178,39 @@ function Editor() {
           {leftTools.map((tool) => {
             const Icon = tool.icon;
             const isActive = activeLeftTool === tool.id;
+            if (tool.id === 'ai') {
+              return (
+                <React.Fragment key={tool.id}>
+                  <button
+                    onClick={() => setActiveLeftTool('ai')}
+                    className={`relative w-10 h-10 rounded-xl flex items-center justify-center mb-1 transition-all ${isActive
+                      ? 'bg-gradient-to-br from-[#00a8e8] to-purple-500 text-white shadow-[0_0_18px_rgba(0,168,232,0.45)]'
+                      : 'bg-gradient-to-br from-[#00a8e8]/20 to-purple-500/20 text-sky-200 hover:from-[#00a8e8]/35 hover:to-purple-500/35'
+                      }`}
+                    title={tool.label}
+                    aria-label={tool.label}
+                    aria-pressed={isActive}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <AIRailBadge />
+                  </button>
+                  <div className="w-6 h-px bg-[#333] my-1.5" />
+                </React.Fragment>
+              );
+            }
             return (
               <button
                 key={tool.id}
                 onClick={() => {
-                  setActiveLeftTool(tool.id as any);
+                  setActiveLeftTool(tool.id);
                 }}
                 className={`w-10 h-10 rounded-lg flex items-center justify-center mb-1 transition-colors ${isActive
                   ? 'bg-[#252525] text-white'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-[#252525]/50'
                   }`}
                 title={tool.label}
+                aria-label={tool.label}
+                aria-pressed={isActive}
               >
                 <Icon className="w-5 h-5" />
               </button>
@@ -260,6 +306,7 @@ function App() {
           <Route path="/components" element={<ComponentsList />} />
           <Route path="/components/:id" element={<ComponentDetail />} />
         </Routes>
+        <AISettingsModal />
       </RemotionRoot>
     </BrowserRouter>
   );

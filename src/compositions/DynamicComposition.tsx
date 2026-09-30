@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill } from 'remotion';
+import { AbsoluteFill, Sequence } from 'remotion';
 import { LayerRenderer } from '../components/preview/LayerRenderer';
 import type { Layer, MediaItem } from '../types';
 
@@ -41,16 +41,25 @@ export const DynamicComposition: React.FC<DynamicCompositionProps> = ({
 
   return (
     <AbsoluteFill style={{ background: '#000' }}>
-      {/* Render layers in order (bottom to top) */}
+      {/* Render layers in order (bottom to top). Each layer lives in its own
+          Sequence so components and videos see a layer-relative frame that
+          starts at 0 when the layer begins. */}
       {sortedLayers.map((layer) => {
         const mediaItem = layer.mediaId ? mediaMap.get(layer.mediaId) : undefined;
         
         return (
-          <LayerRenderer
+          <Sequence
             key={layer.id}
-            layer={layer}
-            media={mediaItem}
-          />
+            from={layer.startFrame}
+            durationInFrames={Math.max(1, layer.durationInFrames)}
+            layout="none"
+            name={layer.name}
+          >
+            <LayerRenderer
+              layer={layer}
+              media={mediaItem}
+            />
+          </Sequence>
         );
       })}
     </AbsoluteFill>

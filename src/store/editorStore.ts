@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ComponentType } from 'react';
-import type { Project, Layer, MediaItem, Effect, Transform, ComponentPart, MediaType, Scene } from '../types';
+import type { Project, Layer, MediaItem, Effect, Transform, ComponentPart, MediaType, Scene, LeftTool } from '../types';
 import { getTemplateById } from '../lib/templates';
 import { jitCompiler } from '../lib/jitCompiler';
 import { remotionExampleComponents } from '../lib/exampleComponents';
@@ -23,7 +23,8 @@ interface EditorState {
   // UI State
   activeLeftPanel: 'media' | 'project';
   activeRightPanel: 'layers' | 'properties' | 'effects';
-  activeLeftTool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters';
+  activeLeftTool: LeftTool;
+  activeRightTab: 'properties' | 'code';
 
   // Actions
   createProject: (name: string, templateId: string, durationInFrames?: number) => Project;
@@ -80,7 +81,10 @@ interface EditorState {
   // UI
   setActiveLeftPanel: (panel: 'media' | 'project') => void;
   setActiveRightPanel: (panel: 'layers' | 'properties' | 'effects') => void;
-  setActiveLeftTool: (tool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters') => void;
+  setActiveLeftTool: (tool: LeftTool) => void;
+  setActiveRightTab: (tab: 'properties' | 'code') => void;
+  /** Replaces a component layer's code and compiled output in one update. */
+  setLayerCode: (layerId: string, code: string, compiled: ComponentType<any> | null) => void;
 
   // Getters
   getSelectedLayer: () => Layer | null;
@@ -125,12 +129,17 @@ const hydrateProjectComponents = (project: Project): Project => {
     };
   };
 
+  // Drop placeholder layers left behind if the page was closed while the AI
+  // was still generating (they have no code yet).
+  const isStalePlaceholder = (layer: Layer) =>
+    layer.type === 'component' && !layer.componentCode && layer.name.startsWith('✦ AI is composing');
+
   return {
     ...project,
-    layers: project.layers.map(hydrateLayer),
+    layers: project.layers.filter((l) => !isStalePlaceholder(l)).map(hydrateLayer),
     scenes: project.scenes.map(scene => ({
       ...scene,
-      layers: scene.layers.map(hydrateLayer),
+      layers: scene.layers.filter((l) => !isStalePlaceholder(l)).map(hydrateLayer),
     })),
   };
 };
@@ -146,7 +155,8 @@ export const useEditorStore = create<EditorState>()(
       currentFrame: 0,
       activeLeftPanel: 'media',
       activeRightPanel: 'layers',
-      activeLeftTool: 'assets',
+      activeLeftTool: 'ai',
+      activeRightTab: 'properties',
       scenes: [],
       currentSceneId: null,
       componentLibrary: sampleComponentLibrary.map(comp => {
@@ -869,7 +879,12 @@ export const useEditorStore = create<EditorState>()(
 
       setActiveLeftPanel: (panel: 'media' | 'project') => set({ activeLeftPanel: panel }),
       setActiveRightPanel: (panel: 'layers' | 'properties' | 'effects') => set({ activeRightPanel: panel }),
-      setActiveLeftTool: (tool: 'assets' | 'components' | 'audio' | 'text' | 'stickers' | 'effects' | 'transitions' | 'filters') => set({ activeLeftTool: tool }),
+      setActiveLeftTool: (tool: LeftTool) => set({ activeLeftTool: tool }),
+      setActiveRightTab: (tab) => set({ activeRightTab: tab }),
+
+      setLayerCode: (layerId, code, compiled) => {
+        get().updateLayer(layerId, { componentCode: code, compiledComponent: compiled });
+      },
 
       getSelectedLayer: () => {
         const { currentProject, selectedLayerId } = get();

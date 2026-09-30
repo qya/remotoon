@@ -1,65 +1,122 @@
 import React from 'react';
-import { Wand2, Zap, Shrink, Eye } from 'lucide-react';
+import { Wand2, Check } from 'lucide-react';
+import { ANIMATION_KINDS, type AnimationKind, type AnimationParams } from '../../lib/layerEffects';
+import { AskAIButton, PanelHeader, SelectLayerHint, Slider } from './panelShared';
+import { useAskAI, useEffectActions, useSelectedLayer } from './panelHooks';
+import type { Effect } from '../../types';
+
+const isAnimation = (kind: AnimationKind) => (e: Effect) =>
+  e.type === 'animation' && (e.params as AnimationParams).kind === kind;
+
+const EFFECT_EMOJI: Record<AnimationKind, string> = {
+  kenburns: '🎥',
+  float: '🎈',
+  pulse: '💓',
+  heartbeat: '❤️',
+  shake: '📳',
+  wobble: '🌀',
+  spin: '🔄',
+  glitch: '👾',
+  'rgb-split': '🌈',
+  flicker: '🎞️',
+};
 
 export const EffectsPanel: React.FC = () => {
+  const layer = useSelectedLayer();
+  const { upsert, remove } = useEffectActions();
+  const askAI = useAskAI();
+
   return (
     <div className="h-full flex flex-col bg-[#1a1a1a] text-gray-200">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#333]">
-        <Wand2 className="w-4 h-4 text-emerald-400" />
-        <span className="text-sm font-medium">Effects</span>
-      </div>
+      <PanelHeader icon={<Wand2 className="w-4 h-4 text-emerald-400" />} title="Effects" />
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden select-none">
-        {/* Background glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-pulse">
-            <Wand2 className="w-7 h-7 text-emerald-400" />
-          </div>
-
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-2">
-            Coming Soon
-          </span>
-
-          <h3 className="text-sm font-semibold text-white mb-1">Visual Effects</h3>
-          <p className="text-xs text-gray-400 max-w-[200px] leading-relaxed mb-6">
-            Apply stunning overlays, particle effects, glitch, and camera shake to your scenes.
+      {!layer ? (
+        <SelectLayerHint what="motion effects" />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          <p className="text-[11px] text-gray-500 truncate">
+            Stack effects on <span className="text-gray-300">{layer.name}</span>
           </p>
+
+          <div className="space-y-2">
+            {ANIMATION_KINDS.map((a) => {
+              const match = isAnimation(a.id);
+              const effect = layer.effects.find(match);
+              const params = effect?.params as AnimationParams | undefined;
+              const active = !!effect;
+
+              return (
+                <div
+                  key={a.id}
+                  className={`rounded-lg border transition-colors ${
+                    active ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-[#333] bg-[#202020]'
+                  }`}
+                >
+                  <button
+                    onClick={() =>
+                      active
+                        ? remove(layer, match)
+                        : upsert(layer, match, {
+                            name: a.name,
+                            type: 'animation',
+                            params: { kind: a.id, intensity: 1, speed: 1 } satisfies AnimationParams,
+                          })
+                    }
+                    aria-pressed={active}
+                    className="w-full flex items-center gap-3 p-2 text-left"
+                  >
+                    <span className="w-8 h-8 rounded-md bg-[#111] flex items-center justify-center text-base" aria-hidden>
+                      {EFFECT_EMOJI[a.id]}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-medium text-gray-200">{a.name}</span>
+                      <span className="block text-[10px] text-gray-500">{a.description}</span>
+                    </span>
+                    <span
+                      className={`w-4 h-4 rounded border flex items-center justify-center ${
+                        active ? 'bg-emerald-500 border-emerald-500' : 'border-[#555]'
+                      }`}
+                    >
+                      {active && <Check className="w-3 h-3 text-white" />}
+                    </span>
+                  </button>
+
+                  {active && params && effect && (
+                    <div className="px-3 pb-3 space-y-2">
+                      <Slider
+                        id={`fx-${a.id}-intensity`}
+                        label="Intensity"
+                        min={0.1}
+                        max={2}
+                        step={0.05}
+                        value={params.intensity}
+                        onChange={(v) => upsert(layer, match, { name: a.name, type: 'animation', params: { ...params, intensity: v } })}
+                      />
+                      {a.id !== 'kenburns' && (
+                        <Slider
+                          id={`fx-${a.id}-speed`}
+                          label="Speed"
+                          min={0.25}
+                          max={4}
+                          step={0.05}
+                          value={params.speed}
+                          unit="×"
+                          onChange={(v) => upsert(layer, match, { name: a.name, type: 'animation', params: { ...params, speed: v } })}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <AskAIButton
+            label="Generate a custom effect layer with AI"
+            onClick={() => askAI('A transparent overlay effect with ', 'new')}
+          />
         </div>
-
-        {/* Feature Mockups */}
-        <div className="w-full space-y-2 relative z-10 opacity-40">
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Zap className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-14 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-20" />
-            </div>
-            <span className="text-[10px] text-gray-500">Overlay</span>
-          </div>
-
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Shrink className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-24 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-16" />
-            </div>
-            <span className="text-[10px] text-gray-500">Pan & Zoom</span>
-          </div>
-
-          <div className="flex items-center gap-3 p-2 rounded bg-[#252525] border border-[#333]">
-            <Eye className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <div className="flex-1 text-left min-w-0">
-              <div className="h-2 bg-gray-600 rounded w-16 mb-1.5" />
-              <div className="h-1.5 bg-gray-700 rounded w-28" />
-            </div>
-            <span className="text-[10px] text-gray-500">Glitch</span>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
